@@ -1,0 +1,23 @@
+{
+  "bookSourceUrl": "https://rules.example.invalid",
+  "bookSourceName": "Rule Objects",
+  "ruleSearch": {
+    "bookList": "$.results[*]",
+    "name": "$.name",
+    "bookUrl": "$.url"
+  },
+  "ruleExplore": {},
+  "ruleBookInfo": {
+    "name": "$.book.name",
+    "tocUrl": "$.book.toc"
+  },
+  "ruleToc": {
+    "chapterList": "$.chapters[*]",
+    "chapterName": "$.title",
+    "chapterUrl": "$.url"
+  },
+  "ruleContent": {
+    "content": "$.content",
+    "nextContentUrl": "$.next"
+  }
+}

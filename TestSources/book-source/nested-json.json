@@ -1,0 +1,17 @@
+{
+  "bookSourceUrl": "https://nested.example.invalid",
+  "bookSourceName": "Nested Dynamic JSON",
+  "dynamicNull": null,
+  "dynamicBool": true,
+  "dynamicInteger": 42,
+  "dynamicNumber": 3.25,
+  "dynamicString": "value",
+  "dynamicArray": [false, 8, 1.5, "item", null],
+  "dynamicObject": {
+    "level": 1,
+    "child": {
+      "active": false,
+      "values": [1, 2, 3]
+    }
+  }
+}

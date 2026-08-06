@@ -1,0 +1,16 @@
+{
+  "bookSourceUrl": "https://unknown.example.invalid",
+  "bookSourceName": "Unknown Fields",
+  "futureMode": "preserve-me",
+  "futureConfiguration": {
+    "enabled": true,
+    "threshold": 2.5,
+    "items": [1, null, "three"]
+  },
+  "ruleSearch": {
+    "bookList": ".item",
+    "futureSelectorMode": {
+      "strict": false
+    }
+  }
+}
