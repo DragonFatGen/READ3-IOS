@@ -2,48 +2,71 @@ name: Core Tests
 
 on:
   push:
+    branches:
+      - main
+      - develop
   pull_request:
+    branches:
+      - main
+      - develop
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  windows:
-    name: Windows / Swift 6.0
-    runs-on: windows-latest
+  windows-core-tests:
+    name: Windows / Swift 6.3.3
+    runs-on: windows-2022
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           submodules: false
 
-      # The public setup action installs an auditable Swift.org toolchain because
-      # GitHub's Windows image does not guarantee the required Swift version.
-      - name: Install Swift
-        uses: swift-actions/setup-swift@v2
+      # swift-actions/setup-swift v3 does not support Windows.
+      # Use the Windows-specific Swift setup action instead.
+      - name: Install Swift 6.3.3
+        uses: compnerd/gha-setup-swift@main
         with:
-          swift-version: "6.0"
+          swift-version: swift-6.3.3-release
+          swift-build: 6.3.3-RELEASE
 
-      - name: Show Swift version
+      - name: Show Swift environment
         shell: pwsh
-        run: swift --version
+        run: |
+          swift --version
+          where.exe swift
 
       - name: Test LegadoCore
         shell: pwsh
-        run: swift test --package-path Packages/LegadoCore
+        run: |
+          swift test --package-path Packages/LegadoCore
 
-  macos:
-    name: macOS / Swift 6.0
-    runs-on: macos-latest
+          if ($LASTEXITCODE -ne 0) {
+            throw "LegadoCore tests failed with exit code $LASTEXITCODE"
+          }
+
+  macos-core-tests:
+    name: macOS / Xcode Swift
+    runs-on: macos-15
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
           submodules: false
 
-      - name: Install Swift
-        uses: swift-actions/setup-swift@v2
-        with:
-          swift-version: "6.0"
-
-      - name: Show Swift version
-        run: swift --version
+      # macOS runner already contains Xcode and its bundled Swift toolchain.
+      # Testing with the Xcode toolchain is also closer to the actual iOS build.
+      - name: Show Apple toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+          xcode-select -p
 
       - name: Test LegadoCore
-        run: swift test --package-path Packages/LegadoCore
+        run: |
+          set -o pipefail
+          swift test --package-path Packages/LegadoCore
