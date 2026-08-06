@@ -1,0 +1,23 @@
+name: LegadoIOS
+
+options:
+  minimumXcodeGenVersion: 2.38.0
+
+packages:
+  LegadoCore:
+    path: Packages/LegadoCore
+
+targets:
+  LegadoIOS:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: Apple/LegadoIOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.read3.legadoios
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
+    dependencies:
+      - package: LegadoCore

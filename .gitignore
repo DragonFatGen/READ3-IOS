@@ -1,0 +1,23 @@
+# Local development scripts
+codex-proxy.ps1
+*.local.ps1
+.env
+.env.*
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Xcode
+DerivedData/
+*.xcarchive
+*.ipa
+*.dSYM
+*.app
+*.xcuserstate
+xcuserdata/
+
+# Editors and operating systems
+.vscode/
+.DS_Store
+Thumbs.db
