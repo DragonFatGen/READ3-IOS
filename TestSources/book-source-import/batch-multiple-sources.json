@@ -1,0 +1,17 @@
+[
+  {
+    "bookSourceUrl": "https://batch-first.example.invalid",
+    "bookSourceName": "First",
+    "sourceOnly": "first"
+  },
+  {
+    "bookSourceUrl": "https://batch-second.example.invalid",
+    "bookSourceName": "Second",
+    "sourceOnly": "second"
+  },
+  {
+    "bookSourceUrl": "https://batch-third.example.invalid",
+    "bookSourceName": "Third",
+    "sourceOnly": "third"
+  }
+]

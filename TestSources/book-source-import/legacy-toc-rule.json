@@ -1,0 +1,8 @@
+{
+  "bookSourceUrl": "https://legacy-toc.example.invalid",
+  "bookSourceName": "Legacy TOC",
+  "ruleChapterList": ".chapter",
+  "ruleChapterName": ".title@text",
+  "ruleContentUrl": "a@href",
+  "ruleChapterUrlNext": ".next@href"
+}

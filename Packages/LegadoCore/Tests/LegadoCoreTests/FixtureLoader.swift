@@ -1,7 +1,7 @@
 import Foundation
 
 enum FixtureLoader {
-    static func data(named name: String) throws -> Data {
+    static func data(named name: String, directory: String = "book-source") throws -> Data {
         let repositoryRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -10,7 +10,7 @@ enum FixtureLoader {
             .deletingLastPathComponent()
         let fixtureURL = repositoryRoot
             .appendingPathComponent("TestSources")
-            .appendingPathComponent("book-source")
+            .appendingPathComponent(directory)
             .appendingPathComponent(name)
         return try Data(contentsOf: fixtureURL)
     }

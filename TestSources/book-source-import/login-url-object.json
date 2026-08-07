@@ -1,0 +1,8 @@
+{
+  "bookSourceUrl": "https://login-object.example.invalid",
+  "bookSourceName": "Login Object",
+  "loginUrl": {
+    "url": "https://login-object.example.invalid/login",
+    "mode": "web"
+  }
+}

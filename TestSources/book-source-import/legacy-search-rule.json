@@ -1,0 +1,13 @@
+{
+  "bookSourceUrl": "https://legacy-search.example.invalid",
+  "bookSourceName": "Legacy Search",
+  "ruleSearchUrl": "https://legacy-search.example.invalid/search?key=searchKey&pg=searchPage",
+  "ruleSearchList": ".book|.result",
+  "ruleSearchName": ".name@text",
+  "ruleSearchAuthor": ".author@text",
+  "ruleSearchIntroduce": ".intro@text",
+  "ruleSearchKind": ".kind@text",
+  "ruleSearchNoteUrl": "a@href",
+  "ruleSearchCoverUrl": "img@src",
+  "ruleSearchLastChapter": ".latest@text"
+}

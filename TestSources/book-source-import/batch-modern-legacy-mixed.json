@@ -1,0 +1,17 @@
+[
+  {
+    "bookSourceUrl": "https://batch-modern.example.invalid",
+    "bookSourceName": "Modern",
+    "ruleSearch": {"name": ".modern@text"},
+    "modernOnly": true
+  },
+  {
+    "bookSourceUrl": "https://batch-legacy.example.invalid",
+    "bookSourceName": "Legacy",
+    "bookSourceType": "AUDIO",
+    "ruleSearchList": ".legacy-book",
+    "ruleSearchName": ".legacy-name@text",
+    "weight": "7",
+    "legacyOnly": true
+  }
+]

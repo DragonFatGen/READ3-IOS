@@ -1,0 +1,19 @@
+{
+  "bookSourceUrl": "https://modern.example.invalid",
+  "bookSourceName": "Modern",
+  "bookSourceType": 2,
+  "customOrder": 4,
+  "enabled": true,
+  "enabledExplore": true,
+  "lastUpdateTime": 1700000000000,
+  "respondTime": 180000,
+  "weight": 3,
+  "exploreUrl": "https://modern.example.invalid/explore",
+  "searchUrl": "https://modern.example.invalid/search?key={{key}}",
+  "ruleSearch": {"bookList": "$.items[*]", "name": "$.name"},
+  "ruleExplore": {"bookList": "$.items[*]"},
+  "ruleBookInfo": {"name": "$.book.name"},
+  "ruleToc": {"chapterList": "$.chapters[*]"},
+  "ruleContent": {"content": "$.content"},
+  "futureField": {"keep": true}
+}

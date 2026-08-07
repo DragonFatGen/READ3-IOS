@@ -1,0 +1,7 @@
+{
+  "bookSourceUrl": "https://legacy-content.example.invalid",
+  "bookSourceName": "Legacy Content",
+  "ruleBookContent": "$content@html",
+  "ruleBookContentReplace": "#advertisement#",
+  "ruleContentUrlNext": ".next@href"
+}

@@ -1,0 +1,11 @@
+[
+  {
+    "bookSourceUrl": "https://batch-valid-first.example.invalid",
+    "bookSourceName": "Valid First"
+  },
+  42,
+  {
+    "bookSourceUrl": "https://batch-valid-last.example.invalid",
+    "bookSourceName": "Valid Last"
+  }
+]
