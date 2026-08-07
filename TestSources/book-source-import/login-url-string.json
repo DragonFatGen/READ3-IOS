@@ -1,0 +1,5 @@
+{
+  "bookSourceUrl": "https://login-string.example.invalid",
+  "bookSourceName": "Login String",
+  "loginUrl": "https://login-string.example.invalid/login"
+}

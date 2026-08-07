@@ -100,8 +100,13 @@ final class BookSourceTests: XCTestCase {
         XCTAssertEqual(decodedAgain, source)
     }
 
-    func testLegacyRootFieldsAreMappedAndRetained() throws {
-        let source = try decodeFixture("legacy.json")
+    func testBookSourceCodableDoesNotPerformLegacyMigration() {
+        XCTAssertThrowsError(try decodeFixture("legacy.json"))
+    }
+
+    func testImporterMapsLegacyRootFieldsAndRemovesMigratedDuplicates() throws {
+        let result = try BookSourceImporter().importSource(from: FixtureLoader.data(named: "legacy.json"))
+        let source = result.source
 
         XCTAssertEqual(source.bookSourceType, 1)
         XCTAssertEqual(source.bookUrlPattern, "^/legacy/book/")
@@ -109,24 +114,24 @@ final class BookSourceTests: XCTestCase {
         XCTAssertFalse(source.enabled)
         XCTAssertTrue(source.enabledExplore)
         XCTAssertEqual(source.header, "{\"User-Agent\":\"Legacy Fixture Agent\"}")
-        XCTAssertEqual(source.searchUrl, "https://legacy.example.invalid/search?key=searchKey")
+        XCTAssertEqual(source.searchUrl, "https://legacy.example.invalid/search?key={{key}}")
         XCTAssertEqual(source.ruleSearch?.name, ".title@text")
         XCTAssertEqual(source.ruleExplore?.bookList, ".explore-book")
         XCTAssertEqual(source.ruleBookInfo?.tocUrl, ".toc@href")
         XCTAssertEqual(source.ruleToc?.chapterUrl, "a@href")
         XCTAssertEqual(source.ruleContent?.replaceRegex, "##legacy-ad##")
-        XCTAssertEqual(source.extraFields["ruleSearchName"], .string(".title@text"))
+        XCTAssertNil(source.extraFields["ruleSearchName"])
 
         let encoded = try encoder.encode(source)
         let encodedObject = try decoder.decode(JSONValue.self, from: encoded)
         guard case let .object(fields) = encodedObject else {
             return XCTFail("Expected encoded object")
         }
-        XCTAssertEqual(fields["ruleSearchName"], .string(".title@text"))
+        XCTAssertNil(fields["ruleSearchName"])
         XCTAssertNotNil(fields["ruleSearch"])
     }
 
-    func testCompatibleLoginAndRuleRepresentationsDecode() throws {
+    func testImporterNormalizesCompatibleLoginAndRuleRepresentations() throws {
         let data = Data(#"""
         {
           "bookSourceUrl": "https://compatible.example.invalid",
@@ -136,7 +141,7 @@ final class BookSourceTests: XCTestCase {
         }
         """#.utf8)
 
-        let source = try decoder.decode(BookSource.self, from: data)
+        let source = try BookSourceImporter().importSource(from: data).source
 
         XCTAssertEqual(source.loginUrl, "https://compatible.example.invalid/login")
         XCTAssertTrue(source.loginUi?.contains("nickname") == true)

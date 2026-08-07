@@ -1,0 +1,12 @@
+{
+  "bookSourceUrl": "https://legacy-info.example.invalid",
+  "bookSourceName": "Legacy Info",
+  "ruleBookInfoInit": "#detail",
+  "ruleBookName": ".name@text",
+  "ruleBookAuthor": ".author@text",
+  "ruleIntroduce": ".intro@text",
+  "ruleBookKind": ".kind@text",
+  "ruleCoverUrl": "img@src",
+  "ruleBookLastChapter": ".latest@text",
+  "ruleChapterUrl": ".toc@href"
+}

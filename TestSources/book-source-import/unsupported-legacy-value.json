@@ -1,0 +1,6 @@
+{
+  "bookSourceUrl": "https://unsupported.example.invalid",
+  "bookSourceName": "Unsupported Legacy",
+  "ruleSearchName": {"selector": ".name"},
+  "futureImportMetadata": {"version": 9}
+}

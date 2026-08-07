@@ -1,0 +1,8 @@
+{
+  "bookSourceUrl": "https://login-array.example.invalid",
+  "bookSourceName": "Login Array",
+  "loginUrl": [
+    {"url": "https://login-array.example.invalid/first"},
+    {"url": "https://login-array.example.invalid/second"}
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "bookSourceUrl": "https://legacy-explore.example.invalid",
+  "bookSourceName": "Legacy Explore",
+  "ruleFindUrl": "Popular::https://legacy-explore.example.invalid/popular&&Recent::https://legacy-explore.example.invalid/recent",
+  "ruleFindList": ".book",
+  "ruleFindName": ".name@text",
+  "ruleFindAuthor": ".author@text",
+  "ruleFindIntroduce": ".intro@text",
+  "ruleFindKind": ".kind@text",
+  "ruleFindNoteUrl": "a@href",
+  "ruleFindCoverUrl": "img@src",
+  "ruleFindLastChapter": ".latest@text"
+}
