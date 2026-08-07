@@ -1,0 +1,9 @@
+{
+  "bookSourceUrl": "https://string-rule.example.invalid",
+  "bookSourceName": "String Rule",
+  "ruleSearch": "{\"bookList\":\"$.items[*]\",\"name\":\"$.name\"}",
+  "ruleExplore": "{\"bookList\":\"$.categories[*]\"}",
+  "ruleBookInfo": "{\"name\":\"$.book.name\"}",
+  "ruleToc": "{\"chapterList\":\"$.chapters[*]\"}",
+  "ruleContent": "{\"content\":\"$.content\"}"
+}

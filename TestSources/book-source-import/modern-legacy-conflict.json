@@ -1,0 +1,12 @@
+{
+  "bookSourceUrl": "https://conflict.example.invalid",
+  "bookSourceName": "Conflict",
+  "searchUrl": "https://conflict.example.invalid/modern",
+  "ruleSearchUrl": "https://conflict.example.invalid/legacy",
+  "ruleSearch": {
+    "bookList": ".modern",
+    "name": ".modern-name"
+  },
+  "ruleSearchList": ".legacy",
+  "ruleSearchName": ".legacy-name"
+}

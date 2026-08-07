@@ -125,13 +125,13 @@ This mapping is based on the following Android sources, not inferred from field 
 
 ## Serialization and legacy behavior
 
-- `SourceAnalyzer.BookSourceAny` accepts `ruleExplore`, `ruleSearch`, `ruleBookInfo`, `ruleToc`, and `ruleContent` as either objects or JSON-object strings. Swift accepts both forms.
-- `loginUi` accepts the entity string form and the list/object import form. Non-string JSON is normalized into a JSON string, matching `SourceAnalyzer`.
-- `loginUrl` accepts a string or an object whose `url` member is a string, matching `SourceAnalyzer`.
-- `GsonExtensions.IntJsonDeserializer` accepts numeric JSON primitives for `Int` and ignores non-numeric primitives. In the old-source branch Android maps `AUDIO` to 1 and every other string type to 0; Swift matches that behavior, while still throwing for object/array types in known scalar fields.
-- Legacy root fields are copied into the current nested model only when the corresponding current field is absent. Their original keys remain in `extraFields`, so export does not silently discard them.
-- `SourceAnalyzer.toNewRule`, `toNewUrl`, and `toNewUrls` rewrite old rule syntax and request syntax. This phase does not execute or rewrite rule text; those transformations belong to the later rule/parser and request phases.
-- Android decides that a source is old when `BookSourceAny.ruleToc == null`. Swift instead requires the presence of known legacy keys, so a valid current source that merely omits optional `ruleToc` is not accidentally migrated.
+- `BookSource` Codable handles only the current structured representation and unknown-field preservation. Alternate representations and legacy keys are handled by `BookSourceImporter` and `LegacySourceNormalizer`.
+- `SourceAnalyzer.BookSourceAny` accepts rule objects as objects or JSON-object strings. The importer normalizes both to structured objects before `BookSource` decoding.
+- `loginUi` object/array values and `loginUrl` string/object/array values are normalized by the importer. See `docs/source-import-normalization.md` for preservation and Android differences.
+- `GsonExtensions.IntJsonDeserializer` accepts numeric JSON primitives for `Int`. The importer normalizes compatible numeric representations before strict model decoding.
+- Safe legacy root fields move into current fields and are removed. Unsupported legacy values remain as unknown fields, while conflicts select the current field and produce explicit warnings.
+- `SourceAnalyzer.toNewRule`, `toNewUrl`, and `toNewUrls` compatibility rewrites occur during import only; no rule or request is executed.
+- Android decides that a source is old when `BookSourceAny.ruleToc == null`. Swift uses individual legacy keys, so a valid current source that omits optional `ruleToc` is not accidentally migrated.
 
 ## Custom variables
 
