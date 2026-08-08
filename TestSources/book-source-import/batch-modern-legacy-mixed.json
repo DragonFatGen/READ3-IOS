@@ -1,0 +1,13 @@
+[
+  {
+    "bookSourceName": "Modern Clean",
+    "bookSourceUrl": "https://mixed-modern.example.invalid",
+    "modernOnlyExtra": "modern"
+  },
+  {
+    "bookSourceName": "Legacy Migrated",
+    "bookSourceUrl": "https://mixed-legacy.example.invalid",
+    "bookSourceType": "AUDIO",
+    "legacyOnlyExtra": "legacy"
+  }
+]

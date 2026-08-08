@@ -3,6 +3,53 @@ import Foundation
 public struct BookSourceImporter: Sendable {
     public init() {}
 
+    /// Imports either one source object or an ordered array of source objects.
+    /// Each array element is processed through ``importSource(from:)`` independently.
+    public func importSources(
+        from data: Data,
+        mode: BatchImportMode = .strict
+    ) throws -> BatchSourceImportResult {
+        let rawValue: JSONValue
+        do {
+            rawValue = try JSONDecoder().decode(JSONValue.self, from: data)
+        } catch {
+            throw SourceImportError.invalidJSON
+        }
+
+        switch rawValue {
+        case .object:
+            return BatchSourceImportResult(
+                successes: [try importSource(from: data)],
+                failures: []
+            )
+        case let .array(values):
+            var successes: [SourceImportResult] = []
+            var failures: [BatchSourceImportFailure] = []
+
+            for (index, value) in values.enumerated() {
+                do {
+                    let elementData = try JSONEncoder().encode(value)
+                    successes.append(try importSource(from: elementData))
+                } catch let error as SourceImportError {
+                    if mode == .strict {
+                        throw BatchSourceImportError.elementFailed(index: index, error: error)
+                    }
+                    failures.append(BatchSourceImportFailure(index: index, error: error))
+                } catch {
+                    let importError = SourceImportError.normalizedJSONEncodingFailed
+                    if mode == .strict {
+                        throw BatchSourceImportError.elementFailed(index: index, error: importError)
+                    }
+                    failures.append(BatchSourceImportFailure(index: index, error: importError))
+                }
+            }
+
+            return BatchSourceImportResult(successes: successes, failures: failures)
+        default:
+            throw SourceImportError.topLevelMustBeObjectOrArray
+        }
+    }
+
     public func importSource(from data: Data) throws -> SourceImportResult {
         let rawValue: JSONValue
         do {

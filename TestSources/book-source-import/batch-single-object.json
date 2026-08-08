@@ -1,0 +1,5 @@
+{
+  "bookSourceName": "Single Batch Source",
+  "bookSourceUrl": "https://single-batch.example.invalid",
+  "singleExtra": "preserved"
+}

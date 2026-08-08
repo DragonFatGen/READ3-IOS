@@ -1,0 +1,11 @@
+[
+  {
+    "bookSourceName": "Valid Before",
+    "bookSourceUrl": "https://valid-before.example.invalid"
+  },
+  "invalid element",
+  {
+    "bookSourceName": "Valid After",
+    "bookSourceUrl": "https://valid-after.example.invalid"
+  }
+]
