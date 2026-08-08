@@ -3,9 +3,9 @@ import XCTest
 
 final class RuleVariableTests: XCTestCase {
     private struct LiteralSelector: RuleSelectorExecutor {
-        func execute(selector: SelectorRule, input: RuleValue) throws -> RuleValue { .string(selector.value) }
-        func execute(jsonPath: String, input: RuleValue) throws -> RuleValue { .string(jsonPath) }
-        func execute(xpath: String, input: RuleValue) throws -> RuleValue { .string(xpath) }
+        func execute(selector: SelectorRule, input: RuleValue, context: RuleExecutionContext) throws -> RuleValue { .string(selector.value) }
+        func execute(jsonPath: String, input: RuleValue, context: RuleExecutionContext) throws -> RuleValue { .string(jsonPath) }
+        func execute(xpath: String, input: RuleValue, context: RuleExecutionContext) throws -> RuleValue { .string(xpath) }
     }
 
     func testParserPromotesPutAndGetToDedicatedIR() throws {

@@ -310,7 +310,9 @@ public struct RuleParser: Sendable {
 
     private func parseLeaf(_ original: String, context: RuleParseContext) throws -> RuleExpression {
         var rule = original.trimmingCharacters(in: .whitespacesAndNewlines)
-        if rule.hasPrefix("@@") { rule.removeFirst(2) }
+        let forcedHistorical = rule.hasPrefix("@@")
+        if forcedHistorical { rule.removeFirst(2) }
+        if forcedHistorical { return try parseHistoricalLeaf(rule, context: context) }
         if rule.lowercased().hasPrefix("@css:") {
             return .selector(SelectorRule(type: .css, value: String(rule.dropFirst(5)).trimmingCharacters(in: .whitespacesAndNewlines)))
         }
@@ -319,6 +321,13 @@ public struct RuleParser: Sendable {
         if context.contentIsJSON || rule.hasPrefix("$.") || rule.hasPrefix("$[") { return .jsonPath(rule) }
         if rule.hasPrefix("/") { return .xpath(rule) }
 
+        return try parseHistoricalLeaf(rule, context: context)
+    }
+
+    private func parseHistoricalLeaf(
+        _ rule: String,
+        context: RuleParseContext
+    ) throws -> RuleExpression {
         if let child = try firstTopLevelOperator(in: rule, candidates: [.child]) {
             let parts = Array(
                 split(rule, on: child.operator.rawValue, protectingTemplates: true, respectingGroups: true)

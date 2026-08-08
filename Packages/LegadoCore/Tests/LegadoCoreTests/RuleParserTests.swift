@@ -36,6 +36,20 @@ final class RuleParserTests: XCTestCase {
         )
     }
 
+    func testDoubleAtForcesHistoricalModeBeforePrefixRecognition() throws {
+        XCTAssertEqual(
+            try parser.parse("@@tag.div@text"),
+            .combination(.child, [
+                leaf("tag.div"),
+                leaf("text")
+            ])
+        )
+        XCTAssertNotEqual(
+            try parser.parse("@@@CSS:div@text"),
+            .selector(SelectorRule(type: .css, value: "div@text"))
+        )
+    }
+
     func testJSONPathDetection() throws {
         XCTAssertEqual(try parser.parse("$.items[*].name"), .jsonPath("$.items[*].name"))
         XCTAssertEqual(try parser.parse("$[0]"), .jsonPath("$[0]"))

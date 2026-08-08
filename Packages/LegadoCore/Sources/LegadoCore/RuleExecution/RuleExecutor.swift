@@ -30,17 +30,17 @@ public struct RuleExecutor: Sendable {
             guard let selectorExecutor else {
                 throw RuleExecutionError.unsupportedExecutionNode("selector")
             }
-            return try selectorExecutor.execute(selector: rule, input: input)
+            return try selectorExecutor.execute(selector: rule, input: input, context: context)
         case let .jsonPath(rule):
             guard let selectorExecutor else {
                 throw RuleExecutionError.unsupportedExecutionNode("JSONPath")
             }
-            return try selectorExecutor.execute(jsonPath: rule, input: input)
+            return try selectorExecutor.execute(jsonPath: rule, input: input, context: context)
         case let .xpath(rule):
             guard let selectorExecutor else {
                 throw RuleExecutionError.unsupportedExecutionNode("XPath")
             }
-            return try selectorExecutor.execute(xpath: rule, input: input)
+            return try selectorExecutor.execute(xpath: rule, input: input, context: context)
         case .javaScript(""):
             return .none
         case .javaScript:
@@ -109,8 +109,17 @@ public struct RuleExecutor: Sendable {
         input: RuleValue,
         context: inout RuleExecutionContext
     ) throws -> RuleValue {
-        guard operation != .child else {
-            throw RuleExecutionError.unsupportedExecutionNode("historical selector child chain")
+        if operation == .child {
+            guard let selectorExecutor else {
+                throw RuleExecutionError.unsupportedExecutionNode("historical selector child chain")
+            }
+            let chain = try branches.map { branch -> SelectorRule in
+                guard case let .selector(selector) = branch, selector.type == .legado else {
+                    throw RuleExecutionError.unsupportedExecutionNode("non-selector child-chain node")
+                }
+                return selector
+            }
+            return try selectorExecutor.execute(childChain: chain, input: input, context: context)
         }
         var values: [RuleValue] = []
         for branch in branches {

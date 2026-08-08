@@ -4,15 +4,15 @@ import XCTest
 
 final class RuleExecutorTests: XCTestCase {
     private struct StubSelector: RuleSelectorExecutor {
-        func execute(selector: SelectorRule, input: RuleValue) throws -> RuleValue {
+        func execute(selector: SelectorRule, input: RuleValue, context: RuleExecutionContext) throws -> RuleValue {
             switch selector.value {
             case "none": return .none
             case "empty": return .string("")
             default: return .string(input.stringValue + selector.value)
             }
         }
-        func execute(jsonPath: String, input: RuleValue) throws -> RuleValue { .string(jsonPath) }
-        func execute(xpath: String, input: RuleValue) throws -> RuleValue { .string(xpath) }
+        func execute(jsonPath: String, input: RuleValue, context: RuleExecutionContext) throws -> RuleValue { .string(jsonPath) }
+        func execute(xpath: String, input: RuleValue, context: RuleExecutionContext) throws -> RuleValue { .string(xpath) }
     }
 
     func testExecutionFixtureContainsDeterministicCases() throws {

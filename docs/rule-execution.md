@@ -61,8 +61,10 @@ the same input. Regex replacement maps over string lists without collapsing the
 shape. Regex extraction chains patterns like `AnalyzeByRegex`; the final pattern
 emits group zero followed by captures for every match.
 
-`RuleSelectorExecutor` is only an injection boundary. Without an adapter,
-selector, JSONPath, XPath, and historical child-chain nodes fail explicitly.
+`RuleSelectorExecutor` is an injection boundary. `JSoupRuleSelectorExecutor`
+now implements historical/default selectors, explicit CSS extraction, and
+historical child chains using SwiftSoup. Without that adapter, selector nodes
+still fail explicitly. JSONPath and XPath remain unsupported.
 
 ## Known differences and deferred work
 
@@ -70,6 +72,7 @@ selector, JSONPath, XPath, and historical child-chain nodes fail explicitly.
   core foundation has no persistence adapter.
 - Android template JavaScript can return numbers, objects, and lists; JavaScript
   is deliberately unsupported here.
-- CSS, historical JSoup, JSONPath, XPath, and child-chain semantics are deferred.
+- JSONPath and XPath selector semantics are deferred. Historical JSoup and CSS
+  compatibility boundaries are documented in `docs/rule-jsoup.md`.
 - Foundation `NSRegularExpression` may differ from Java regex for obscure syntax;
   future compatibility fixtures should document any observed cases.
