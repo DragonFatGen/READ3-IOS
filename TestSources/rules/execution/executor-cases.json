@@ -1,0 +1,9 @@
+[
+  { "name": "empty", "rule": "" },
+  { "name": "concatenate", "rule": "a&&b&&c" },
+  { "name": "fallback", "rule": "a||b||c" },
+  { "name": "interleave", "rule": "a%%b%%c" },
+  { "name": "template-variable", "rule": "prefix-{{@get:{name}}}" },
+  { "name": "regex-captures", "rule": "##([a-z]+)-(\\d+)##$2/$1" },
+  { "name": "put-get", "rule": "@put:{\"token\":\"value\"}@get:{token}" }
+]

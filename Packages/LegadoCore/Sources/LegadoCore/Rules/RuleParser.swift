@@ -149,13 +149,16 @@ public struct RuleParser: Sendable {
         _ rawRule: String,
         context: RuleParseContext
     ) throws -> RuleExpression {
-        if context.allInOne && rawRule.hasPrefix(":") {
-            let patterns = String(rawRule.dropFirst()).components(separatedBy: "&&").filter { !$0.isEmpty }
-            return .regex(RegexRule(purpose: .extraction(patterns: patterns)))
+        let put = try extractVariableWrites(from: rawRule, context: context)
+        let ruleWithoutWrites = put.rule
+        if context.allInOne && ruleWithoutWrites.hasPrefix(":") {
+            let patterns = String(ruleWithoutWrites.dropFirst()).components(separatedBy: "&&").filter { !$0.isEmpty }
+            let expression = RuleExpression.regex(RegexRule(purpose: .extraction(patterns: patterns)))
+            return put.assignments.isEmpty ? expression : .variableWrite(put.assignments, expression)
         }
 
         let replacementParts = split(
-            rawRule,
+            ruleWithoutWrites,
             on: "##",
             protectingTemplates: true,
             respectingEscapes: false
@@ -172,14 +175,15 @@ public struct RuleParser: Sendable {
                 ))
             )
         }
-        return expression
+        if put.assignments.isEmpty { return expression }
+        return .variableWrite(put.assignments, expression)
     }
 
     private func parseTemplateOrCombination(
         _ rule: String,
         context: RuleParseContext
     ) throws -> RuleExpression {
-        if rule.contains("{{") {
+        if rule.contains("{{") || rule.range(of: "@get:", options: .caseInsensitive) != nil || containsCaptureReference(rule) {
             return .template(try parseTemplate(rule, context: context))
         }
         return try parseCombination(rule, context: context)
@@ -191,9 +195,29 @@ public struct RuleParser: Sendable {
     ) throws -> TemplateExpression {
         var parts: [TemplateExpression.Part] = []
         var cursor = rule.startIndex
-        while let open = rule.range(of: "{{", range: cursor..<rule.endIndex) {
+        while cursor < rule.endIndex {
+            let templateOpen = rule.range(of: "{{", range: cursor..<rule.endIndex)
+            let getOpen = rule.range(of: "@get:{", options: .caseInsensitive, range: cursor..<rule.endIndex)
+            let captureOpen = captureRange(in: rule, range: cursor..<rule.endIndex)
+            let candidates = [templateOpen, getOpen, captureOpen].compactMap { $0 }
+            guard let open = candidates.min(by: { $0.lowerBound < $1.lowerBound }) else { break }
             if open.lowerBound > cursor {
                 parts.append(.literal(String(rule[cursor..<open.lowerBound])))
+            }
+            if String(rule[open]).hasPrefix("$") {
+                parts.append(.expression(.captureGroup(Int(rule[rule.index(after: open.lowerBound)..<open.upperBound])!)))
+                cursor = open.upperBound
+                continue
+            }
+            if String(rule[open]).lowercased() == "@get:{" {
+                guard let close = rule[open.upperBound...].firstIndex(of: "}") else {
+                    parts.append(.literal(String(rule[open.lowerBound...])))
+                    cursor = rule.endIndex
+                    break
+                }
+                parts.append(.expression(.variableRead(String(rule[open.upperBound..<close]))))
+                cursor = rule.index(after: close)
+                continue
             }
             guard let close = rule.range(of: "}}", range: open.upperBound..<rule.endIndex) else {
                 if context.errorPolicy == .strict {
@@ -209,6 +233,51 @@ public struct RuleParser: Sendable {
         }
         if cursor < rule.endIndex { parts.append(.literal(String(rule[cursor...]))) }
         return TemplateExpression(parts: parts)
+    }
+
+    private func extractVariableWrites(
+        from rule: String,
+        context: RuleParseContext
+    ) throws -> (rule: String, assignments: [RuleVariableAssignment]) {
+        var remaining = rule
+        var assignments: [RuleVariableAssignment] = []
+        while let prefix = remaining.range(of: "@put:{", options: .caseInsensitive),
+              let close = remaining[prefix.upperBound...].firstIndex(of: "}") {
+            let jsonStart = remaining.index(prefix.upperBound, offsetBy: -1)
+            let json = String(remaining[jsonStart...close])
+            if let data = json.data(using: .utf8),
+               let values = try? JSONDecoder().decode([String: String].self, from: data) {
+                for key in values.keys.sorted() {
+                    assignments.append(RuleVariableAssignment(
+                        key: key,
+                        value: try parse(values[key]!, context: context)
+                    ))
+                }
+            }
+            remaining.removeSubrange(prefix.lowerBound...close)
+        }
+        return (remaining, assignments)
+    }
+
+    private func containsCaptureReference(_ rule: String) -> Bool {
+        captureRange(in: rule, range: rule.startIndex..<rule.endIndex) != nil
+    }
+
+    private func captureRange(in rule: String, range: Range<String.Index>) -> Range<String.Index>? {
+        var index = range.lowerBound
+        while index < range.upperBound {
+            if rule[index] == "$" {
+                var end = rule.index(after: index)
+                var digits = 0
+                while end < range.upperBound, rule[end].isNumber, digits < 2 {
+                    end = rule.index(after: end)
+                    digits += 1
+                }
+                if digits > 0 { return index..<end }
+            }
+            index = rule.index(after: index)
+        }
+        return nil
     }
 
     private func parseTemplateBody(

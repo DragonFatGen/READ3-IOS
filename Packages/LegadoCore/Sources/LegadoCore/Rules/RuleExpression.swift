@@ -9,6 +9,19 @@ public indirect enum RuleExpression: Equatable, Sendable {
     case sequence([RuleExpression])
     case combination(RuleOperator, [RuleExpression])
     case replacement(RuleExpression, RegexRule)
+    case variableRead(String)
+    case variableWrite([RuleVariableAssignment], RuleExpression)
+    case captureGroup(Int)
+}
+
+public struct RuleVariableAssignment: Equatable, Sendable {
+    public let key: String
+    public let value: RuleExpression
+
+    public init(key: String, value: RuleExpression) {
+        self.key = key
+        self.value = value
+    }
 }
 
 public struct SelectorRule: Equatable, Sendable {

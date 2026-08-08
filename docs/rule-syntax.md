@@ -168,19 +168,23 @@ The parser has no global state. Android's mutable `isJSON` and persistent
 `isRegex` flags are represented by immutable `RuleParseContext` values, which
 prevents one parse call from contaminating another.
 
-A later executor should visit the IR and supply result-shape-specific behavior:
-selector engines for leaf nodes; ordered branch combination for `RuleOperator`;
-template expansion followed by any required dynamic reparse; sequential stage
-feeding for `sequence`; and regex compilation/replacement only for `RegexRule`.
-That executor must define limits and errors separately and must not be added to
-the parser module.
+A separate executor now supplies result-shape-specific behavior for combinations,
+templates, sequence, variables, captures, and regex. Concrete selector engines
+remain behind an injection boundary and are not part of the parser or this
+foundation executor.
 
-## Deliberately unsupported in this phase
+## Current execution boundary
 
-No selector, JSONPath, XPath, JavaScript, template, capture, or regex is
-executed. `@put:{...}`, `@get:{...}`, `$1`-style capture substitution, embedded
-JSONPath `{$...}`, selector index semantics, and runtime-dependent template
-reparse are documented Android features but are not yet promoted to complete IR
-nodes. They remain leaf/template text for a later parser increment after their
-execution contracts are designed. Network, DOM, WebView, persistence, and UI
-code are outside this module.
+Sequence, `&&`/`||`/`%%`, templates, regex extraction/replacement, `$n` capture
+references, and `@put`/`@get` now have execution behavior and dedicated IR where
+needed. Regex compilation remains an execution-stage operation.
+
+Selector, JSONPath, XPath, and JavaScript leaves are not implemented. They fail
+with `unsupportedExecutionNode` unless a selector adapter is injected; no
+concrete adapter ships in this phase. Embedded JSONPath `{$...}`, selector index
+semantics, network, DOM, WebView, persistence, and UI remain out of scope.
+
+The dynamic boundary follows Android `makeUpRule`: a rule-shaped body inside
+`{{...}}` is recursively parsed and evaluated, but the completed outer template
+string is not classified a second time. Operators produced by expansion remain
+text rather than becoming a new combination tree.
