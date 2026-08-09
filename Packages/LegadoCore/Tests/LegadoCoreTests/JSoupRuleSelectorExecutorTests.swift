@@ -38,10 +38,7 @@ final class JSoupRuleSelectorExecutorTests: XCTestCase {
     }
 
     func testTextHandlesElementBoundariesNestedWhitespaceAndUnicode() throws {
-        let html = #"""
-        <div class="sample"><h2>Book <em>三</em></h2><span> Author
-	 A </span><p>Deep <b><i>繁體 📚</i></b> End</p></div>
-        """#
+        let html = "<div class=\"sample\"><h2>Book <em>三</em></h2><span> Author\n\t A </span><p>Deep <b><i>繁體 📚</i></b> End</p></div>"
         XCTAssertEqual(
             try execute("class.sample@text", html: html),
             .strings(["Book 三 Author A Deep 繁體 📚 End"])
