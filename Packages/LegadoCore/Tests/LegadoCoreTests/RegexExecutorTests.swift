@@ -47,10 +47,13 @@ final class RegexExecutorTests: XCTestCase {
 
     func testExtractionNoMatchIsNone() throws {
         var context = RuleExecutionContext()
-        XCTAssertEqual(try RuleExecutor().execute(
-            .regex(RegexRule(purpose: .extraction(patterns: ["z+"])),
-            input: RuleExecutionInput(.string("abc")), context: &context
-        ).value, .none)
+        XCTAssertEqual(
+            try RuleExecutor().execute(
+                .regex(RegexRule(purpose: .extraction(patterns: ["z+"]))),
+                input: RuleExecutionInput(.string("abc")), context: &context
+            ).value,
+            .none
+        )
     }
 
     func testSequenceAndCombinationWithRegex() throws {
