@@ -28,6 +28,49 @@ final class RuleVariableTests: XCTestCase {
         XCTAssertEqual(context.variable(named: "token"), "value")
     }
 
+    func testPutValueCanReadAnotherVariable() throws {
+        XCTAssertEqual(
+            try execute(
+                #"@put:{"saved":"@get:{keyword}"}@get:{saved}"#,
+                temporaryVariables: ["keyword": "book"]
+            ),
+            .string("book")
+        )
+    }
+
+    func testPutWithPlainStringRemainsSupported() throws {
+        XCTAssertEqual(
+            try execute(#"@put:{"saved":"abc"}@get:{saved}"#),
+            .string("abc")
+        )
+    }
+
+    func testPutStringCanContainBraces() throws {
+        XCTAssertEqual(
+            try execute(#"@put:{"saved":"a{b}c"}@get:{saved}"#),
+            .string("a{b}c")
+        )
+    }
+
+    func testPutStringCanContainEscapedQuoteAndClosingBrace() throws {
+        XCTAssertEqual(
+            try execute(#"@put:{"saved":"a\"}b"}@get:{saved}"#),
+            .string(#"a"}b"#)
+        )
+    }
+
+    func testPutWithMultipleVariablesRemainsSupported() throws {
+        var context = RuleExecutionContext()
+        let result = try RuleExecutor(selectorExecutor: LiteralSelector()).execute(
+            try RuleParser().parse(#"@put:{"second":"two","first":"one"}@get:{first}-@get:{second}"#),
+            input: RuleExecutionInput(.none),
+            context: &context
+        )
+        XCTAssertEqual(result.value, .string("one-two"))
+        XCTAssertEqual(context.variable(named: "first"), "one")
+        XCTAssertEqual(context.variable(named: "second"), "two")
+    }
+
     func testUndefinedGetIsEmptyString() throws {
         var context = RuleExecutionContext()
         XCTAssertEqual(try RuleExecutor().execute(
@@ -91,5 +134,17 @@ final class RuleVariableTests: XCTestCase {
 
     private func leaf(_ value: String) -> RuleExpression {
         .selector(SelectorRule(type: .legado, value: value))
+    }
+
+    private func execute(
+        _ rule: String,
+        temporaryVariables: [String: String] = [:]
+    ) throws -> RuleValue {
+        var context = RuleExecutionContext(temporaryVariables: temporaryVariables)
+        return try RuleExecutor(selectorExecutor: LiteralSelector()).execute(
+            RuleParser().parse(rule),
+            input: RuleExecutionInput(.none),
+            context: &context
+        ).value
     }
 }

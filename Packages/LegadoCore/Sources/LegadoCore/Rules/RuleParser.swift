@@ -241,9 +241,11 @@ public struct RuleParser: Sendable {
     ) throws -> (rule: String, assignments: [RuleVariableAssignment]) {
         var remaining = rule
         var assignments: [RuleVariableAssignment] = []
-        while let prefix = remaining.range(of: "@put:{", options: .caseInsensitive),
-              let close = remaining[prefix.upperBound...].firstIndex(of: "}") {
+        while let prefix = remaining.range(of: "@put:{", options: .caseInsensitive) {
             let jsonStart = remaining.index(prefix.upperBound, offsetBy: -1)
+            guard let close = balancedJSONObjectEnd(in: remaining, startingAt: jsonStart) else {
+                break
+            }
             let json = String(remaining[jsonStart...close])
             if let data = json.data(using: .utf8),
                let values = try? JSONDecoder().decode([String: String].self, from: data) {
@@ -257,6 +259,40 @@ public struct RuleParser: Sendable {
             remaining.removeSubrange(prefix.lowerBound...close)
         }
         return (remaining, assignments)
+    }
+
+    private func balancedJSONObjectEnd(
+        in value: String,
+        startingAt start: String.Index
+    ) -> String.Index? {
+        var depth = 0
+        var inString = false
+        var escaped = false
+        var index = start
+
+        while index < value.endIndex {
+            let character = value[index]
+            if inString {
+                if escaped {
+                    escaped = false
+                } else if character == "\\" {
+                    escaped = true
+                } else if character == "\"" {
+                    inString = false
+                }
+            } else if character == "\"" {
+                inString = true
+            } else if character == "{" {
+                depth += 1
+            } else if character == "}" {
+                depth -= 1
+                if depth == 0 {
+                    return index
+                }
+            }
+            index = value.index(after: index)
+        }
+        return nil
     }
 
     private func containsCaptureReference(_ rule: String) -> Bool {
