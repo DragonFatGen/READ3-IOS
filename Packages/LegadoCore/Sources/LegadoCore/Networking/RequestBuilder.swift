@@ -219,17 +219,17 @@ public struct RequestBuilder: Sendable {
         let javaScript = remaining.removeValue(forKey: "js")?.stringValue
         let proxy = remaining.removeValue(forKey: "proxy")?.stringValue
         let headerValue = remaining.removeValue(forKey: "headers")
-        let headers: HTTPHeaders
+        let optionHeaders: HTTPHeaders
         do {
-            headers = try headers(from: headerValue, field: "URL option headers")
+            optionHeaders = try headers(from: headerValue, field: "URL option headers")
         } catch {
             if policy == .strict { throw error }
-            headers = HTTPHeaders()
+            optionHeaders = HTTPHeaders()
         }
         return RequestOptions(
             method: method,
             charset: charset,
-            headers: headers,
+            headers: optionHeaders,
             body: try bodyValue.map(jsonString),
             retry: retry,
             type: type,
