@@ -179,11 +179,11 @@ Sequence, `&&`/`||`/`%%`, templates, regex extraction/replacement, `$n` capture
 references, and `@put`/`@get` now have execution behavior and dedicated IR where
 needed. Regex compilation remains an execution-stage operation.
 
-Historical/default and explicit CSS selector leaves execute when
-`JSoupRuleSelectorExecutor` is injected. JSONPath, XPath, and JavaScript remain
-unsupported. Embedded JSONPath `{$...}`, network, WebView, persistence, and UI
-remain out of scope. Historical index and extraction behavior is documented in
-`docs/rule-jsoup.md`.
+Historical/default, explicit CSS, JSONPath, and the documented XPath subset
+execute when `LegadoRuleSelectorExecutor` is injected. JavaScript, network,
+WebView, persistence, and UI remain out of scope. Selector compatibility
+boundaries are documented in `docs/rule-jsoup.md`, `docs/rule-jsonpath.md`, and
+`docs/rule-xpath.md`.
 
 The dynamic boundary follows Android `makeUpRule`: a rule-shaped body inside
 `{{...}}` is recursively parsed and evaluated, but the completed outer template

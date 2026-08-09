@@ -10,6 +10,10 @@ public enum RuleExecutionError: Error, Sendable, Equatable {
     case pathNotFound(String)
     case unsupportedJSONPathFeature(String)
     case resultTypeMismatch(String)
+    case invalidXPath(String)
+    case invalidDocument(String)
+    case unsupportedXPathFeature(String)
+    case xpathResultTypeMismatch(String)
 }
 
 extension RuleExecutionError: LocalizedError {
@@ -24,6 +28,10 @@ extension RuleExecutionError: LocalizedError {
         case let .pathNotFound(path): "JSONPath did not match: \(path)"
         case let .unsupportedJSONPathFeature(feature): "Unsupported JSONPath feature: \(feature)"
         case let .resultTypeMismatch(message): "JSONPath result type mismatch: \(message)"
+        case let .invalidXPath(path): "Invalid XPath: \(path)"
+        case let .invalidDocument(message): "Invalid XPath document: \(message)"
+        case let .unsupportedXPathFeature(feature): "Unsupported XPath feature: \(feature)"
+        case let .xpathResultTypeMismatch(message): "XPath result type mismatch: \(message)"
         }
     }
 }

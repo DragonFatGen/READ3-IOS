@@ -153,5 +153,7 @@ Not supported in this phase:
 
 - returning DOM nodes from `getElement/getElements` as a public RuleValue;
 - element-only explicit CSS rules without a final extraction field;
-- JSONPath, XPath, JavaScript, HTTP, URL completion, or DOM persistence;
+- JavaScript, HTTP, URL completion, or DOM persistence; JSONPath and XPath are
+  separate adapters documented in `docs/rule-jsonpath.md` and
+  `docs/rule-xpath.md`;
 - guaranteed parity for every jsoup selector or malformed document.

@@ -1,6 +1,7 @@
 public struct LegadoRuleSelectorExecutor: RuleSelectorExecutor {
     private let jsoup = JSoupRuleSelectorExecutor()
     private let jsonPath = JSONPathRuleSelectorExecutor()
+    private let xpath = XPathRuleSelectorExecutor()
 
     public init() {}
 
@@ -16,7 +17,7 @@ public struct LegadoRuleSelectorExecutor: RuleSelectorExecutor {
         try jsonPath.execute(jsonPath: path, input: input, context: context)
     }
 
-    public func execute(xpath: String, input: RuleValue, context: RuleExecutionContext) throws -> RuleValue {
-        throw RuleExecutionError.unsupportedExecutionNode("XPath")
+    public func execute(xpath path: String, input: RuleValue, context: RuleExecutionContext) throws -> RuleValue {
+        try xpath.execute(xpath: path, input: input, context: context)
     }
 }
