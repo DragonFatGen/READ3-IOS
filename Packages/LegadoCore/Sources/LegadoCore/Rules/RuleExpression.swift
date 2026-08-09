@@ -2,6 +2,8 @@ public indirect enum RuleExpression: Equatable, Sendable {
     case empty
     case selector(SelectorRule)
     case jsonPath(String)
+    /// Literal text with one or more balanced `{$...}` JSONPath substitutions.
+    case jsonPathTemplate(TemplateExpression)
     case xpath(String)
     case javaScript(String)
     case regex(RegexRule)

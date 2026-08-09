@@ -36,6 +36,8 @@ public struct RuleExecutor: Sendable {
                 throw RuleExecutionError.unsupportedExecutionNode("JSONPath")
             }
             return try selectorExecutor.execute(jsonPath: rule, input: input, context: context)
+        case let .jsonPathTemplate(template):
+            return try expand(template, input: input, context: &context)
         case let .xpath(rule):
             guard let selectorExecutor else {
                 throw RuleExecutionError.unsupportedExecutionNode("XPath")

@@ -55,6 +55,15 @@ final class RuleParserTests: XCTestCase {
         XCTAssertEqual(try parser.parse("$[0]"), .jsonPath("$[0]"))
     }
 
+    func testEmbeddedJSONPathHasDedicatedIR() throws {
+        XCTAssertEqual(
+            try parser.parse("@Json:before {$.name} after"),
+            .jsonPathTemplate(TemplateExpression(parts: [
+                .literal("before "), .expression(.jsonPath("$.name")), .literal(" after")
+            ]))
+        )
+    }
+
     func testJSONContentContextDefaultsToJSONPath() throws {
         XCTAssertEqual(
             try parser.parse("items[0]", context: RuleParseContext(contentIsJSON: true)),

@@ -317,11 +317,66 @@ public struct RuleParser: Sendable {
             return .selector(SelectorRule(type: .css, value: String(rule.dropFirst(5)).trimmingCharacters(in: .whitespacesAndNewlines)))
         }
         if rule.lowercased().hasPrefix("@xpath:") { return .xpath(String(rule.dropFirst(7))) }
-        if rule.lowercased().hasPrefix("@json:") { return .jsonPath(String(rule.dropFirst(6))) }
-        if context.contentIsJSON || rule.hasPrefix("$.") || rule.hasPrefix("$[") { return .jsonPath(rule) }
+        if rule.lowercased().hasPrefix("@json:") {
+            return try parseJSONPathLeaf(String(rule.dropFirst(6)), context: context)
+        }
+        if context.contentIsJSON || rule.hasPrefix("$.") || rule.hasPrefix("$[") {
+            return try parseJSONPathLeaf(rule, context: context)
+        }
         if rule.hasPrefix("/") { return .xpath(rule) }
 
         return try parseHistoricalLeaf(rule, context: context)
+    }
+
+    private func parseJSONPathLeaf(
+        _ rule: String,
+        context: RuleParseContext
+    ) throws -> RuleExpression {
+        guard rule.contains("{$.") else { return .jsonPath(rule) }
+        let characters = Array(rule)
+        var parts: [TemplateExpression.Part] = []
+        var literalStart = 0
+        var index = 0
+        while index + 2 < characters.count {
+            guard characters[index] == "{", characters[index + 1] == "$", characters[index + 2] == "." else {
+                index += 1
+                continue
+            }
+            var cursor = index + 1
+            var squareDepth = 0
+            var braceDepth = 1
+            var quote: Character?
+            var escaped = false
+            while cursor < characters.count, braceDepth > 0 {
+                let character = characters[cursor]
+                if escaped { escaped = false; cursor += 1; continue }
+                if character == "\\" { escaped = true; cursor += 1; continue }
+                if let activeQuote = quote {
+                    if character == activeQuote { quote = nil }
+                    cursor += 1
+                    continue
+                }
+                if character == "\"" || character == "'" { quote = character; cursor += 1; continue }
+                if character == "[" { squareDepth += 1 }
+                else if character == "]" { squareDepth = max(0, squareDepth - 1) }
+                else if squareDepth == 0, character == "{" { braceDepth += 1 }
+                else if squareDepth == 0, character == "}" { braceDepth -= 1 }
+                cursor += 1
+            }
+            guard braceDepth == 0 else {
+                if context.errorPolicy == .strict {
+                    throw RuleSyntaxError.unterminatedTemplate(offset: index)
+                }
+                break
+            }
+            if index > literalStart { parts.append(.literal(String(characters[literalStart..<index]))) }
+            parts.append(.expression(.jsonPath(String(characters[(index + 1)..<(cursor - 1)]))))
+            literalStart = cursor
+            index = cursor
+        }
+        guard !parts.isEmpty else { return .jsonPath(rule) }
+        if literalStart < characters.count { parts.append(.literal(String(characters[literalStart...]))) }
+        return .jsonPathTemplate(TemplateExpression(parts: parts))
     }
 
     private func parseHistoricalLeaf(
