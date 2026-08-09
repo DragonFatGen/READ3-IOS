@@ -28,6 +28,20 @@ final class JSONPathRuleSelectorExecutorTests: XCTestCase {
         XCTAssertEqual(try run("$['name','enabled']", fixture: "basic.json"), .strings(["Legado", "true"]))
     }
 
+    func testRecursiveDescentOrderingAcrossObjectShapesAndWildcard() throws {
+        let json = #"{"target":"root","child":{"target":"child","deep":{"target":"deep"}},"items":[{"target":"array-1"},{"target":"array-2"}],"sibling":{"target":"sibling"}}"#
+        XCTAssertEqual(
+            try run("$..target", json: json),
+            .strings(["child", "deep", "array-1", "array-2", "sibling", "root"])
+        )
+        XCTAssertEqual(
+            try run("$.child..*", json: json),
+            .strings([#"{"target":"deep"}"#, "deep", "child"])
+        )
+        XCTAssertEqual(try run("$.items..target", json: json), .strings(["array-1", "array-2"]))
+        XCTAssertEqual(try run("$.sibling..target", json: json), .strings(["sibling"]))
+    }
+
     func testSliceAndNegativeSlice() throws {
         XCTAssertEqual(try run("$.items[1:3].name", fixture: "array.json"), .strings(["second", "second"]))
         XCTAssertEqual(try run("$.items[-2:].name", fixture: "array.json"), .strings(["second", "last"]))

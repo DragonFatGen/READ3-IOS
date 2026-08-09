@@ -58,8 +58,10 @@ because `RuleValue` intentionally contains strings rather than DOM nodes.
 The final historical field, or the field after the final explicit-CSS `@`, has
 these meanings:
 
-- `text`: normalized descendant text for each selected element. Empty strings
-  are discarded.
+- `text`: normalized descendant text for each selected element. The compatibility
+  extractor collapses whitespace and preserves one separator at block-element
+  boundaries, including a block followed by another child element. Empty
+  strings are discarded.
 - `ownText`: normalized direct text only. Empty strings are discarded.
 - `textNodes`: trim each direct text node using Android's character `<= U+0020`
   rule, discard empty nodes, and join a single element's nodes with newline.

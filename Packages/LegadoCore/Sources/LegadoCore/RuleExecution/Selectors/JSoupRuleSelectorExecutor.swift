@@ -123,7 +123,7 @@ public struct JSoupRuleSelectorExecutor: RuleSelectorExecutor {
         case "text":
             var values: [String] = []
             for element in elements {
-                let value = try element.text()
+                let value = try androidCompatibleText(element)
                 if !value.isEmpty { values.append(value) }
             }
             return list(values)
@@ -180,5 +180,50 @@ public struct JSoupRuleSelectorExecutor: RuleSelectorExecutor {
         return String(withoutLeading.reversed().drop(while: { character in
             character.unicodeScalars.allSatisfy { $0.value <= 0x20 }
         }).reversed())
+    }
+
+    private func androidCompatibleText(_ element: Element) throws -> String {
+        let visitor = AndroidTextVisitor()
+        _ = try element.traverse(visitor)
+        return visitor.value
+    }
+}
+
+private final class AndroidTextVisitor: NodeVisitor {
+    private var text = ""
+
+    var value: String {
+        text.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    func head(_ node: Node, _ depth: Int) throws {
+        if let textNode = node as? TextNode {
+            appendNormalized(textNode.getWholeText())
+        } else if let element = node as? Element,
+                  element.isBlock() || element.tagNameNormal() == "br" {
+            appendSpaceIfNeeded()
+        }
+    }
+
+    func tail(_ node: Node, _ depth: Int) throws {
+        guard let element = node as? Element,
+              element.isBlock(),
+              node.nextSibling() != nil else { return }
+        appendSpaceIfNeeded()
+    }
+
+    private func appendNormalized(_ value: String) {
+        for character in value {
+            if character.isWhitespace {
+                appendSpaceIfNeeded()
+            } else {
+                text.append(character)
+            }
+        }
+    }
+
+    private func appendSpaceIfNeeded() {
+        guard !text.isEmpty, text.last != " " else { return }
+        text.append(" ")
     }
 }

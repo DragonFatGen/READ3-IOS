@@ -37,6 +37,21 @@ final class JSoupRuleSelectorExecutorTests: XCTestCase {
                        .strings(["Alpha Beta Omega"]))
     }
 
+    func testTextHandlesElementBoundariesNestedWhitespaceAndUnicode() throws {
+        let html = #"""
+        <div class="sample"><h2>Book <em>三</em></h2><span> Author
+	 A </span><p>Deep <b><i>繁體 📚</i></b> End</p></div>
+        """#
+        XCTAssertEqual(
+            try execute("class.sample@text", html: html),
+            .strings(["Book 三 Author A Deep 繁體 📚 End"])
+        )
+        XCTAssertEqual(
+            try execute("class.sample@text", html: #"<div class="sample">A <span>B <i>C</i></span> D</div>"#),
+            .strings(["A B C D"])
+        )
+    }
+
     func testOwnTextExcludesDescendantText() throws {
         XCTAssertEqual(try execute("class.summary@ownText", fixture: "basic.html"),
                        .strings(["Alpha Omega"]))

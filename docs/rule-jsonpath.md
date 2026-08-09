@@ -45,7 +45,7 @@ in JSON-content context (or with `@Json:`).
 | `$.books[0]` | Yes | selected value | array index | Yes |
 | negative index | Yes | item counted from end | negative array index | Yes |
 | `[*]` / `.*` | Yes | ordered list | wildcard | Arrays: yes; object key order is not guaranteed |
-| `$..name` | Yes | ordered indefinite list | recursive named descent | Arrays: yes; object sibling order may differ |
+| `$..name` | Yes | ordered indefinite list | deterministic descendant-first named scan | Yes for the documented deterministic object ordering |
 | `$..*` | Yes | indefinite list | recursive wildcard | Approximately |
 | `[0,2]` | Yes | ordered union | index union | Yes |
 | `['a','b']` | Yes | property projection | property union | Yes except object storage order |
@@ -98,8 +98,10 @@ stage.
 ## Known differences
 
 - `JSONValue.object` uses a Swift dictionary and cannot preserve JSON member
-  insertion order, so wildcard/recursive traversal across sibling object keys
-  uses deterministic sorted-key order rather than Jayway's input order.
+  insertion order. Wildcard and recursive traversal therefore use deterministic
+  sorted-key order. Named recursive descent evaluates a reached descendant
+  object's matching property before that object's deeper descendants; the root
+  object's own matching property remains in its sorted traversal position.
 - Advanced Jayway filters, regex predicates, operators, functions, script
   expressions, and mutation APIs are unsupported.
 - The public `RuleValue` cannot carry raw map/list nodes like Android

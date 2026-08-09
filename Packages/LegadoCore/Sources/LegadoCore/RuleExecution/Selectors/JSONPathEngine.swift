@@ -253,20 +253,40 @@ struct JSONPathEvaluator {
     }
 
     private func recursive(_ value: JSONValue, names: [String]?) -> [JSONValue] {
+        guard let names else { return recursiveWildcard(value) }
+        return recursiveNamed(value, names: names, includeCurrentObject: false)
+    }
+
+    private func recursiveNamed(
+        _ value: JSONValue,
+        names: [String],
+        includeCurrentObject: Bool
+    ) -> [JSONValue] {
         var result: [JSONValue] = []
         switch value {
         case let .object(object):
+            if includeCurrentObject {
+                result.append(contentsOf: names.compactMap { object[$0] })
+            }
             for key in object.keys.sorted() {
                 guard let child = object[key] else { continue }
-                if names == nil || names!.contains(key) { result.append(child) }
-                result.append(contentsOf: recursive(child, names: names))
+                if !includeCurrentObject, names.contains(key) { result.append(child) }
+                result.append(contentsOf: recursiveNamed(child, names: names, includeCurrentObject: true))
             }
         case let .array(array):
             for child in array {
-                if names == nil { result.append(child) }
-                result.append(contentsOf: recursive(child, names: names))
+                result.append(contentsOf: recursiveNamed(child, names: names, includeCurrentObject: true))
             }
         default: break
+        }
+        return result
+    }
+
+    private func recursiveWildcard(_ value: JSONValue) -> [JSONValue] {
+        var result: [JSONValue] = []
+        for child in children(value) {
+            result.append(child)
+            result.append(contentsOf: recursiveWildcard(child))
         }
         return result
     }
