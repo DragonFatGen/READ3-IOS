@@ -212,16 +212,16 @@ struct JSONPathEvaluator {
         for step in query.steps {
             switch step {
             case let .child(names):
-                current = current.flatMap { value in
+                current = current.flatMap { value -> [JSONValue] in
                     guard case let .object(object) = value else { return [] }
-                    return names.compactMap { object[$0] }
+                    return names.compactMap { name -> JSONValue? in object[name] }
                 }
             case .wildcard:
                 current = current.flatMap(children)
             case let .index(indexes):
-                current = current.flatMap { value in
+                current = current.flatMap { value -> [JSONValue] in
                     guard case let .array(array) = value else { return [] }
-                    return indexes.compactMap { index in
+                    return indexes.compactMap { index -> JSONValue? in
                         guard let index = resolved(index, count: array.count) else { return nil }
                         return array[index]
                     }
@@ -243,9 +243,12 @@ struct JSONPathEvaluator {
 
     private func children(_ value: JSONValue) -> [JSONValue] {
         switch value {
-        case let .array(values): values
-        case let .object(values): values.keys.sorted().compactMap { values[$0] }
-        default: []
+        case let .array(values):
+            return values
+        case let .object(values):
+            return values.keys.sorted().compactMap { values[$0] }
+        default:
+            return []
         }
     }
 
@@ -295,7 +298,8 @@ struct JSONPathEvaluator {
 
     private func evaluateFilter(_ expression: FilterExpression, current: JSONValue) -> JSONValue {
         switch expression {
-        case let .literal(value): value
+        case let .literal(value):
+            return value
         case let .path(steps):
             var values = [current]
             for step in steps {
@@ -308,15 +312,26 @@ struct JSONPathEvaluator {
                 }
             }
             return values.first ?? .null
-        case let .comparison(op, lhs, rhs): .bool(compare(op, evaluateFilter(lhs, current: current), evaluateFilter(rhs, current: current)))
-        case let .and(lhs, rhs): .bool(truth(evaluateFilter(lhs, current: current)) && truth(evaluateFilter(rhs, current: current)))
-        case let .or(lhs, rhs): .bool(truth(evaluateFilter(lhs, current: current)) || truth(evaluateFilter(rhs, current: current)))
-        case let .not(value): .bool(!truth(evaluateFilter(value, current: current)))
+        case let .comparison(op, lhs, rhs):
+            return .bool(compare(op, evaluateFilter(lhs, current: current), evaluateFilter(rhs, current: current)))
+        case let .and(lhs, rhs):
+            return .bool(truth(evaluateFilter(lhs, current: current)) && truth(evaluateFilter(rhs, current: current)))
+        case let .or(lhs, rhs):
+            return .bool(truth(evaluateFilter(lhs, current: current)) || truth(evaluateFilter(rhs, current: current)))
+        case let .not(value):
+            return .bool(!truth(evaluateFilter(value, current: current)))
         }
     }
 
     private func truth(_ value: JSONValue) -> Bool {
-        switch value { case .null: false; case let .bool(v): v; default: true }
+        switch value {
+        case .null:
+            return false
+        case let .bool(v):
+            return v
+        default:
+            return true
+        }
     }
     private func compare(_ op: FilterOperator, _ lhs: JSONValue, _ rhs: JSONValue) -> Bool {
         if let leftNumber = scalar(lhs), let rightNumber = scalar(rhs) {
@@ -333,10 +348,30 @@ struct JSONPathEvaluator {
         if op == .notEqual { return lhs != rhs }
         let l = scalar(lhs), r = scalar(rhs)
         guard let l, let r else { return false }
-        switch op { case .less: l < r; case .lessEqual: l <= r; case .greater: l > r; case .greaterEqual: l >= r; default: false }
+        switch op {
+        case .less:
+            return l < r
+        case .lessEqual:
+            return l <= r
+        case .greater:
+            return l > r
+        case .greaterEqual:
+            return l >= r
+        default:
+            return false
+        }
     }
     private func scalar(_ value: JSONValue) -> Double? {
-        switch value { case let .integer(v): Double(v); case let .number(v): v; case let .string(v): Double(v); default: nil }
+        switch value {
+        case let .integer(v):
+            return Double(v)
+        case let .number(v):
+            return v
+        case let .string(v):
+            return Double(v)
+        default:
+            return nil
+        }
     }
 }
 

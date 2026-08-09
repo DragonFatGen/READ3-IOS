@@ -55,12 +55,18 @@ public struct JSONPathRuleSelectorExecutor: RuleSelectorExecutor {
 
     private func androidString(_ value: JSONValue) -> String {
         switch value {
-        case .null: "null"
-        case let .bool(value): value ? "true" : "false"
-        case let .integer(value): String(value)
-        case let .number(value): value.isFinite ? String(value) : "null"
-        case let .string(value): value
-        case .array, .object: compactJSON(value)
+        case .null:
+            return "null"
+        case let .bool(value):
+            return value ? "true" : "false"
+        case let .integer(value):
+            return String(value)
+        case let .number(value):
+            return value.isFinite ? String(value) : "null"
+        case let .string(value):
+            return value
+        case .array, .object:
+            return compactJSON(value)
         }
     }
 

@@ -139,7 +139,7 @@ struct XPathSubsetEvaluator {
     }
 
     private func selectNodes(axis: XPathStep.Axis, from context: [Element]) throws -> [XPathValue] {
-        let elements = selectedContexts(axis: axis, from: context)
+        let elements = try selectedContexts(axis: axis, from: context)
         var result: [XPathValue] = []
         for element in elements {
             result.append(contentsOf: element.children().array().map(XPathValue.element))
@@ -153,9 +153,10 @@ struct XPathSubsetEvaluator {
 
     private func selectedContexts(axis: XPathStep.Axis, from context: [Element]) throws -> [Element] {
         switch axis {
-        case .child: context
+        case .child:
+            return context
         case .descendant:
-            try unique(context.flatMap { try $0.getAllElements().array() })
+            return try unique(context.flatMap { try $0.getAllElements().array() })
         }
     }
 
@@ -231,14 +232,15 @@ struct XPathSubsetEvaluator {
 
     private func operandString(_ operand: XPathOperand, context: [Element]) throws -> String {
         switch operand {
-        case let .literal(value): value
+        case let .literal(value):
+            return value
         case let .path(path):
             let values = try evaluate(path, from: context)
             let separator = values.allSatisfy { value in
                 if case .string = value { return true }
                 return false
             } ? "," : ""
-            return try values.map { value in
+            return values.map { value in
                 switch value {
                 case let .element(element): return element.ownText()
                 case let .string(string): return string

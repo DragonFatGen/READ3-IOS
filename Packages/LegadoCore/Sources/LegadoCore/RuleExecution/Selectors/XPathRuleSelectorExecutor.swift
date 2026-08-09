@@ -43,13 +43,16 @@ public struct XPathRuleSelectorExecutor: RuleSelectorExecutor {
 
     private func serialize(_ value: XPathValue) throws -> String {
         switch value {
-        case let .element(element): try element.outerHtml()
-        case let .string(string): string
+        case let .element(element):
+            return try element.outerHtml()
+        case let .string(string):
+            return string
         case let .number(number):
             // JsoupXpath's count(Integer) follows its Double branch because its
             // assignability check is reversed, producing values such as `2.0`.
-            String(number)
-        case let .boolean(boolean): boolean ? "true" : "false"
+            return String(number)
+        case let .boolean(boolean):
+            return boolean ? "true" : "false"
         }
     }
 }
