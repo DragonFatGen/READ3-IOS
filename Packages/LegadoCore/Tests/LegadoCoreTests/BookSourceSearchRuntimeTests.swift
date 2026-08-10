@@ -166,8 +166,10 @@ final class BookSourceSearchRuntimeTests: XCTestCase {
             contentType: "application/json",
             finalURL: "https://api.example.invalid/search/result"
         )
-        async let first = firstRuntime.search(source: basicHTMLSource(), keyword: "html")
-        async let second = secondRuntime.search(source: jsonSource(), keyword: "json")
+        let firstSource = basicHTMLSource()
+        let secondSource = jsonSource()
+        async let first = firstRuntime.search(source: firstSource, keyword: "html")
+        async let second = secondRuntime.search(source: secondSource, keyword: "json")
         let values = try await (first, second)
         XCTAssertEqual(values.0.map(\.name), ["A", "B"])
         XCTAssertEqual(values.1.map(\.author), ["AA", "BB"])
