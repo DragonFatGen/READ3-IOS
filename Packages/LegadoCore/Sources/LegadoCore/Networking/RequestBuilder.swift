@@ -86,12 +86,15 @@ public struct RequestBuilder: Sendable {
             headers["proxy"] = nil
         }
 
-        guard let resolvedURL = resolveURL(parts.url, baseURL: context.baseURL) else {
+        let resolvedURL = if method == .get {
+            try resolveGETURL(parts.url, baseURL: context.baseURL, charset: options.charset)
+        } else {
+            resolveURL(parts.url, baseURL: context.baseURL)
+        }
+        guard let resolvedURL else {
             throw HTTPError.invalidURL(parts.url)
         }
-        let url = method == .get
-            ? try encodeGETQuery(in: resolvedURL, charset: options.charset)
-            : resolvedURL
+        let url = resolvedURL
         let cookies = await cookieStore?.cookies(
             for: url,
             sourceIdentifier: context.sourceIdentifier
@@ -324,23 +327,35 @@ public struct RequestBuilder: Sendable {
         }.joined(separator: "&")
     }
 
-    private func encodeGETQuery(in url: URL, charset: String?) throws -> URL {
+    private func resolveGETURL(
+        _ value: String,
+        baseURL: String?,
+        charset: String?
+    ) throws -> URL? {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let fragmentStart = trimmed.firstIndex(of: "#")
+        guard let queryStart = trimmed.firstIndex(of: "?"),
+              fragmentStart.map({ queryStart < $0 }) ?? true else {
+            return resolveURL(trimmed, baseURL: baseURL)
+        }
+        let queryEnd = fragmentStart ?? trimmed.endIndex
+        let rawQuery = String(trimmed[trimmed.index(after: queryStart)..<queryEnd])
+        guard !rawQuery.isEmpty else {
+            return resolveURL(trimmed, baseURL: baseURL)
+        }
         if let charset,
            !["utf-8", "utf8"].contains(charset.lowercased()) {
             throw HTTPError.unsupportedCharset(charset)
         }
-        guard var components = URLComponents(url: url, resolvingAgainstBaseURL: true) else {
-            throw HTTPError.invalidURL(url.absoluteString)
-        }
-        guard let query = components.percentEncodedQuery, !query.isEmpty else { return url }
-        components.percentEncodedQuery = query.split(separator: "&", omittingEmptySubsequences: true).map { field in
+        let encodedQuery = rawQuery.split(separator: "&", omittingEmptySubsequences: true).map { field in
             let pieces = field.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
             let name = encodeQueryComponent(String(pieces[0]))
             let value = pieces.count == 2 ? encodeQueryComponent(String(pieces[1])) : ""
             return "\(name)=\(value)"
         }.joined(separator: "&")
-        guard let encoded = components.url else { throw HTTPError.invalidURL(url.absoluteString) }
-        return encoded
+        let prefix = trimmed[..<queryStart]
+        let fragment = fragmentStart.map { String(trimmed[$0...]) } ?? ""
+        return resolveURL("\(prefix)?\(encodedQuery)\(fragment)", baseURL: baseURL)
     }
 
     private func encodeQueryComponent(_ value: String) -> String {

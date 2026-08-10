@@ -20,6 +20,16 @@ final class RequestBuilderTests: XCTestCase {
         )
     }
 
+    func testGETQueryPreservesOriginallyDoubleEncodedEscapeAndEncodesStrayPercent() async throws {
+        let request = try await RequestBuilder().build(
+            "https://example.invalid/search?literal=%252F&stray=%"
+        )
+        XCTAssertEqual(
+            request.url.absoluteString,
+            "https://example.invalid/search?literal=%252F&stray=%25"
+        )
+    }
+
     func testURLBoundaryAndPOSTRawBody() async throws {
         let rule = #"https://example.invalid/api,{"method":"POST","body":{"name":"book"}}"#
         let request = try await RequestBuilder().build(rule)
@@ -38,9 +48,10 @@ final class RequestBuilderTests: XCTestCase {
         XCTAssertEqual(form.headers["content-type"], "application/x-www-form-urlencoded")
 
         let raw = try await RequestBuilder().build(
-            #"https://example.invalid/raw,{"method":"POST","headers":{"Content-Type":"text/plain; charset=utf-8"},"body":"raw body"}"#
+            #"https://example.invalid/raw,{"method":"POST","charset":"GBK","headers":{"Content-Type":"text/plain; charset=utf-8"},"body":"raw body"}"#
         )
         XCTAssertEqual(raw.bodyKind, .raw)
+        XCTAssertEqual(raw.charset, "GBK")
         XCTAssertEqual(raw.headers["content-type"], "text/plain; charset=utf-8")
         XCTAssertEqual(String(decoding: try XCTUnwrap(raw.body), as: UTF8.self), "raw body")
     }
