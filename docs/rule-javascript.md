@@ -190,10 +190,12 @@ and WebView options before HTTP execution as documented in
 `docs/http-request-engine.md`.
 
 Core `HTTPClient.send` is asynchronous while `RuleExecutor.execute` is
-synchronous. This phase deliberately does not bridge them with a semaphore,
-condition variable, run-loop spin, detached task, or blocking wait. The precise
-allowlisted `java.*` API and its sync/async architecture require a separate
-stage.
+synchronous. The follow-up architecture analysis and exact method behavior are
+in `docs/javascript-java-bridge.md` and
+`docs/javascript-network-bridge-architecture.md`. That phase adds value
+contracts, limits, and an optional immediate mock host, but deliberately does
+not bridge production network I/O with a semaphore, condition variable,
+run-loop spin, detached task, or blocking wait.
 
 ## WebView behavior (deferred)
 
@@ -225,7 +227,8 @@ implemented in this phase.
 | objects/maps | sorted compact JSON | intentional deterministic difference | richer platform-neutral values if justified |
 | JS exception propagation | typed error in both policies | yes | structured source locations |
 | shared Rhino top-level | fresh JavaScriptCore context per execution | intentional isolation improvement | optional source-scoped state |
-| `java.*`, cookies, cache | absent | no | allowlisted Java bridge |
+| `java.ajax/get/post/head` | allowlisted contract and immediate mock-host adapter; no production transport | structural only | dedicated worker and safe transport |
+| cookies and cache | absent | no | async runtime/cookie orchestration |
 | WebView DOM and `webJs` | absent | no | dedicated WebView stage |
 
 Known numeric edge differences remain for negative zero, very large exponent
@@ -253,9 +256,10 @@ untrusted execution rather than being faked with thread blocking.
 
 ## Deferred capabilities
 
-- `java.ajax`
-- `java.get`
-- `java.post`
+- production network transport for `java.ajax`
+- production network transport for `java.get`
+- production network transport for `java.post`
+- production network transport for `java.head`
 - Cookie JS bridge
 - WebView
 - `webJs`

@@ -17,6 +17,7 @@ public struct RuleVariableStore: Sendable, Equatable {
 
 public struct RuleExecutionContext: Sendable, Equatable {
     public let baseUrl: String
+    public let javaScriptSource: JavaScriptSourceSnapshot?
     public var sourceVariables: RuleVariableStore
     public var temporaryVariables: RuleVariableStore
     public var currentResult: RuleValue
@@ -25,6 +26,7 @@ public struct RuleExecutionContext: Sendable, Equatable {
 
     public init(
         baseUrl: String = "",
+        javaScriptSource: JavaScriptSourceSnapshot? = nil,
         sourceVariables: [String: String] = [:],
         temporaryVariables: [String: String] = [:],
         currentResult: RuleValue = .none,
@@ -32,6 +34,7 @@ public struct RuleExecutionContext: Sendable, Equatable {
         errorPolicy: RuleParseContext.ErrorPolicy = .legadoCompatible
     ) {
         self.baseUrl = baseUrl
+        self.javaScriptSource = javaScriptSource
         self.sourceVariables = RuleVariableStore(sourceVariables)
         self.temporaryVariables = RuleVariableStore(temporaryVariables)
         self.currentResult = currentResult
