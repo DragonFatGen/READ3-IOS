@@ -178,9 +178,9 @@ final class BookSourceSearchRuntimeTests: XCTestCase {
     func testSelectorThenRegexFieldComposition() async throws {
         let (runtime, _) = runtime(fixture: "html-basic.html")
         var source = basicHTMLSource()
-        source.ruleSearch?.name = "tag.h2@text##Book ##Novel "
+        source.ruleSearch?.name = "tag.h2@text##Book ##Novel-"
         let result = try await runtime.search(source: source, keyword: "x")
-        XCTAssertEqual(result.first?.name, "Novel A")
+        XCTAssertEqual(result.first?.name, "Novel-A")
     }
 
     func testSelectorInsideTemplateFieldComposition() async throws {

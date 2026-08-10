@@ -325,7 +325,6 @@ public struct RequestBuilder: Sendable {
     }
 
     private func encodeGETQuery(in url: URL, charset: String?) throws -> URL {
-        guard let query = url.query, !query.isEmpty else { return url }
         if let charset,
            !["utf-8", "utf8"].contains(charset.lowercased()) {
             throw HTTPError.unsupportedCharset(charset)
@@ -333,37 +332,60 @@ public struct RequestBuilder: Sendable {
         guard var components = URLComponents(url: url, resolvingAgainstBaseURL: true) else {
             throw HTTPError.invalidURL(url.absoluteString)
         }
+        guard let query = components.percentEncodedQuery, !query.isEmpty else { return url }
         components.percentEncodedQuery = query.split(separator: "&", omittingEmptySubsequences: true).map { field in
             let pieces = field.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
-            let name = encodeQueryPartIfNeeded(String(pieces[0]))
-            let value = pieces.count == 2 ? encodeQueryPartIfNeeded(String(pieces[1])) : ""
+            let name = encodeQueryComponent(String(pieces[0]))
+            let value = pieces.count == 2 ? encodeQueryComponent(String(pieces[1])) : ""
             return "\(name)=\(value)"
         }.joined(separator: "&")
         guard let encoded = components.url else { throw HTTPError.invalidURL(url.absoluteString) }
         return encoded
     }
 
-    private func encodeQueryPartIfNeeded(_ value: String) -> String {
-        let safe = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-._~"))
+    private func encodeQueryComponent(_ value: String) -> String {
+        var result = ""
         var index = value.startIndex
         while index < value.endIndex {
             let character = value[index]
             if character == "%" {
                 let first = value.index(after: index)
-                guard first < value.endIndex else { return percentEncode(value) }
-                let second = value.index(after: first)
-                guard second < value.endIndex,
-                      value[first].isHexDigit,
-                      value[second].isHexDigit else { return percentEncode(value) }
-                index = value.index(after: second)
-                continue
+                if first < value.endIndex {
+                    let second = value.index(after: first)
+                    if second < value.endIndex,
+                       value[first].isHexDigit,
+                       value[second].isHexDigit {
+                        let escape = String(value[first...second])
+                        result += escape.caseInsensitiveCompare("20") == .orderedSame
+                            ? "+"
+                            : "%\(escape)"
+                        index = value.index(after: second)
+                        continue
+                    }
+                }
             }
-            guard character.unicodeScalars.allSatisfy({ safe.contains($0) }) else {
-                return percentEncode(value)
+            if character == " " {
+                result += "+"
+            } else if isASCIIQueryUnreserved(character) {
+                result.append(character)
+            } else {
+                for byte in String(character).utf8 {
+                    result += String(format: "%%%02X", byte)
+                }
             }
             index = value.index(after: index)
         }
-        return value
+        return result
+    }
+
+    private func isASCIIQueryUnreserved(_ character: Character) -> Bool {
+        guard character.unicodeScalars.count == 1,
+              let value = character.unicodeScalars.first?.value,
+              value < 128 else { return false }
+        return (48...57).contains(value) ||
+            (65...90).contains(value) ||
+            (97...122).contains(value) ||
+            [45, 46, 95, 126].contains(value)
     }
 
     private func percentEncode(_ value: String) -> String {

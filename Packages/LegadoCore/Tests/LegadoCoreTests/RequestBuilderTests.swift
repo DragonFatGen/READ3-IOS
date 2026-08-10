@@ -10,6 +10,16 @@ final class RequestBuilderTests: XCTestCase {
         XCTAssertNil(request.body)
     }
 
+    func testGETQueryUsesFormSpacesWithoutDoubleEncodingPercentEscapes() async throws {
+        let request = try await RequestBuilder().build(
+            "https://example.invalid/search?hello world=hello world&path=%2Fbook%26part&term=阅读"
+        )
+        XCTAssertEqual(
+            request.url.absoluteString,
+            "https://example.invalid/search?hello+world=hello+world&path=%2Fbook%26part&term=%E9%98%85%E8%AF%BB"
+        )
+    }
+
     func testURLBoundaryAndPOSTRawBody() async throws {
         let rule = #"https://example.invalid/api,{"method":"POST","body":{"name":"book"}}"#
         let request = try await RequestBuilder().build(rule)
