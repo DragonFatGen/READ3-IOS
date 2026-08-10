@@ -32,6 +32,11 @@ public struct JSoupRuleSelectorExecutor: RuleSelectorExecutor {
         input: RuleExecutionInput,
         context: RuleExecutionContext
     ) throws -> RuleValue {
+        if let nodes = input.node?.collectionNodes {
+            return merge(try nodes.map {
+                try execute(selector: selector, input: RuleExecutionInput(node: $0), context: context)
+            })
+        }
         guard input.node != nil else {
             return try execute(selector: selector, input: input.value, context: context)
         }
@@ -75,6 +80,11 @@ public struct JSoupRuleSelectorExecutor: RuleSelectorExecutor {
         input: RuleExecutionInput,
         context: RuleExecutionContext
     ) throws -> RuleValue {
+        if let nodes = input.node?.collectionNodes {
+            return merge(try nodes.map {
+                try execute(childChain: childChain, input: RuleExecutionInput(node: $0), context: context)
+            })
+        }
         guard input.node != nil else {
             return try execute(childChain: childChain, input: input.value, context: context)
         }
@@ -92,6 +102,11 @@ public struct JSoupRuleSelectorExecutor: RuleSelectorExecutor {
         input: RuleExecutionInput,
         context: RuleExecutionContext
     ) throws -> RuleNodeCollection {
+        if let nodes = input.node?.collectionNodes {
+            return RuleNodeCollection(nodes: try nodes.flatMap {
+                try selectNodes(selector: selector, input: RuleExecutionInput(node: $0), context: context).nodes
+            })
+        }
         let root = try htmlRoot(input, parsingScalar: true)
         return try root.owner.withLock {
             let elements: Elements
@@ -112,6 +127,11 @@ public struct JSoupRuleSelectorExecutor: RuleSelectorExecutor {
         input: RuleExecutionInput,
         context: RuleExecutionContext
     ) throws -> RuleNodeCollection {
+        if let nodes = input.node?.collectionNodes {
+            return RuleNodeCollection(nodes: try nodes.flatMap {
+                try selectNodes(childChain: childChain, input: RuleExecutionInput(node: $0), context: context).nodes
+            })
+        }
         guard childChain.allSatisfy({ $0.type == .legado }) else {
             throw RuleExecutionError.selectorExecutionFailed("A historical child chain contains a non-historical selector.")
         }
@@ -249,6 +269,11 @@ public struct JSoupRuleSelectorExecutor: RuleSelectorExecutor {
 
     private func list(_ values: [String]) -> RuleValue {
         values.isEmpty ? .none : .strings(values)
+    }
+
+    private func merge(_ values: [RuleValue]) -> RuleValue {
+        let strings = values.flatMap(\.stringValues)
+        return strings.isEmpty ? .none : .strings(strings)
     }
 
     private func htmlInput(_ input: RuleValue) -> String {

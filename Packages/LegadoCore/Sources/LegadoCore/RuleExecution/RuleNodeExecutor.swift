@@ -13,6 +13,46 @@ public struct RuleNodeExecutor: Sendable {
         try evaluate(expression, input: input, context: &context)
     }
 
+    /// Executes Android's `getElement` result shape without flattening JSON arrays
+    /// or discarding HTML/XPath roots.
+    public func executeContext(
+        _ expression: RuleExpression,
+        input: RuleExecutionInput,
+        context: inout RuleExecutionContext
+    ) throws -> RuleNode? {
+        switch expression {
+        case .empty:
+            return nil
+        case let .selector(rule):
+            return try selectorExecutor.selectContextNode(selector: rule, input: input, context: context)
+        case let .jsonPath(path):
+            return try selectorExecutor.selectContextNode(jsonPath: path, input: input, context: context)
+        case let .xpath(path):
+            return try selectorExecutor.selectContextNode(xpath: path, input: input, context: context)
+        case let .variableWrite(assignments, body):
+            let scalarExecutor = RuleExecutor(selectorExecutor: selectorExecutor)
+            for assignment in assignments {
+                let value = try scalarExecutor.execute(
+                    assignment.value,
+                    input: input,
+                    context: &context
+                ).value
+                context.setTemporaryVariable(value.stringValue, named: assignment.key)
+            }
+            return try executeContext(body, input: input, context: &context)
+        case let .combination(operation, branches):
+            return RuleNode.context(
+                try evaluate(
+                    .combination(operation, branches),
+                    input: input,
+                    context: &context
+                ).nodes
+            )
+        default:
+            throw RuleExecutionError.unsupportedExecutionNode("structured element expression")
+        }
+    }
+
     private func evaluate(
         _ expression: RuleExpression,
         input: RuleExecutionInput,

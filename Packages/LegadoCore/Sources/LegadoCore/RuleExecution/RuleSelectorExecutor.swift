@@ -57,4 +57,30 @@ public protocol RuleNodeSelectorExecutor: RuleSelectorExecutor {
 
     func selectNodes(jsonPath: String, input: RuleExecutionInput, context: RuleExecutionContext) throws -> RuleNodeCollection
     func selectNodes(xpath: String, input: RuleExecutionInput, context: RuleExecutionContext) throws -> RuleNodeCollection
+
+    func selectContextNode(
+        selector: SelectorRule,
+        input: RuleExecutionInput,
+        context: RuleExecutionContext
+    ) throws -> RuleNode?
+    func selectContextNode(jsonPath: String, input: RuleExecutionInput, context: RuleExecutionContext) throws -> RuleNode?
+    func selectContextNode(xpath: String, input: RuleExecutionInput, context: RuleExecutionContext) throws -> RuleNode?
+}
+
+public extension RuleNodeSelectorExecutor {
+    func selectContextNode(
+        selector: SelectorRule,
+        input: RuleExecutionInput,
+        context: RuleExecutionContext
+    ) throws -> RuleNode? {
+        RuleNode.context(try selectNodes(selector: selector, input: input, context: context).nodes)
+    }
+
+    func selectContextNode(jsonPath: String, input: RuleExecutionInput, context: RuleExecutionContext) throws -> RuleNode? {
+        RuleNode.context(try selectNodes(jsonPath: jsonPath, input: input, context: context).nodes)
+    }
+
+    func selectContextNode(xpath: String, input: RuleExecutionInput, context: RuleExecutionContext) throws -> RuleNode? {
+        RuleNode.context(try selectNodes(xpath: xpath, input: input, context: context).nodes)
+    }
 }

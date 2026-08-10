@@ -11,6 +11,7 @@ public struct RuleNode: @unchecked Sendable, Equatable {
     enum Storage {
         case html(HTMLRuleNode)
         case json(JSONValue)
+        case collection([RuleNode])
     }
 
     let storage: Storage
@@ -19,6 +20,7 @@ public struct RuleNode: @unchecked Sendable, Equatable {
         switch storage {
         case .html: .html
         case .json: .json
+        case let .collection(nodes): nodes.first?.kind ?? .html
         }
     }
 
@@ -27,6 +29,8 @@ public struct RuleNode: @unchecked Sendable, Equatable {
         case let (.html(lhs), .html(rhs)):
             return lhs.owner === rhs.owner && lhs.element === rhs.element
         case let (.json(lhs), .json(rhs)):
+            return lhs == rhs
+        case let (.collection(lhs), .collection(rhs)):
             return lhs == rhs
         default:
             return false
@@ -39,7 +43,19 @@ public struct RuleNode: @unchecked Sendable, Equatable {
             return try node.owner.withLock { try node.element.outerHtml() }
         case let .json(value):
             return value.deterministicRuleString
+        case let .collection(nodes):
+            return try nodes.map { try $0.scalarString() }.joined(separator: "\n")
         }
+    }
+
+    static func context(_ nodes: [RuleNode]) -> RuleNode? {
+        if nodes.count == 1 { return nodes[0] }
+        return nodes.isEmpty ? nil : RuleNode(storage: .collection(nodes))
+    }
+
+    var collectionNodes: [RuleNode]? {
+        guard case let .collection(nodes) = storage else { return nil }
+        return nodes
     }
 }
 

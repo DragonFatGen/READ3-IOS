@@ -52,4 +52,20 @@ public struct LegadoRuleSelectorExecutor: RuleNodeSelectorExecutor {
     public func selectNodes(xpath path: String, input: RuleExecutionInput, context: RuleExecutionContext) throws -> RuleNodeCollection {
         try xpath.selectNodes(xpath: path, input: input, context: context)
     }
+
+    public func selectContextNode(
+        selector: SelectorRule,
+        input: RuleExecutionInput,
+        context: RuleExecutionContext
+    ) throws -> RuleNode? {
+        try jsoup.selectContextNode(selector: selector, input: input, context: context)
+    }
+
+    public func selectContextNode(jsonPath path: String, input: RuleExecutionInput, context: RuleExecutionContext) throws -> RuleNode? {
+        try jsonPath.selectContextNode(jsonPath: path, input: input, context: context)
+    }
+
+    public func selectContextNode(xpath path: String, input: RuleExecutionInput, context: RuleExecutionContext) throws -> RuleNode? {
+        try xpath.selectContextNode(xpath: path, input: input, context: context)
+    }
 }

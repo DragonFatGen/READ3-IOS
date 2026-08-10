@@ -32,6 +32,12 @@ public struct JSONPathRuleSelectorExecutor: RuleSelectorExecutor {
         input: RuleExecutionInput,
         context: RuleExecutionContext
     ) throws -> RuleValue {
+        if let nodes = input.node?.collectionNodes {
+            let values = try nodes.flatMap {
+                try execute(jsonPath: path, input: RuleExecutionInput(node: $0), context: context).stringValues
+            }
+            return values.isEmpty ? .none : .strings(values)
+        }
         do {
             let root = try decode(input)
             let values = try evaluate(path, root: root)
@@ -68,6 +74,25 @@ public struct JSONPathRuleSelectorExecutor: RuleSelectorExecutor {
             throw error
         } catch {
             if context.errorPolicy == .legadoCompatible { return RuleNodeCollection(nodes: []) }
+            throw RuleExecutionError.invalidJSONPath(path)
+        }
+    }
+
+    public func selectContextNode(
+        jsonPath path: String,
+        input: RuleExecutionInput,
+        context: RuleExecutionContext
+    ) throws -> RuleNode? {
+        do {
+            let values = try evaluate(path, root: decode(input))
+            guard !values.isEmpty else { return nil }
+            let value: JSONValue = values.count == 1 ? values[0] : .array(values)
+            return RuleNode(storage: .json(value))
+        } catch let error as RuleExecutionError {
+            if context.errorPolicy == .legadoCompatible { return nil }
+            throw error
+        } catch {
+            if context.errorPolicy == .legadoCompatible { return nil }
             throw RuleExecutionError.invalidJSONPath(path)
         }
     }

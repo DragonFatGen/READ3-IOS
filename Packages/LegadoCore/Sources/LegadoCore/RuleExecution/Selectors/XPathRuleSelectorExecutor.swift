@@ -33,6 +33,12 @@ public struct XPathRuleSelectorExecutor: RuleSelectorExecutor {
         context: RuleExecutionContext
     ) throws -> RuleValue {
         guard !path.isEmpty else { return .none }
+        if let nodes = input.node?.collectionNodes {
+            let values = try nodes.flatMap {
+                try execute(xpath: path, input: RuleExecutionInput(node: $0), context: context).stringValues
+            }
+            return values.isEmpty ? .none : .strings(values)
+        }
         do {
             let root = try xpathRoot(input)
             return try root.owner.withLock {
@@ -54,6 +60,11 @@ public struct XPathRuleSelectorExecutor: RuleSelectorExecutor {
         context: RuleExecutionContext
     ) throws -> RuleNodeCollection {
         guard !path.isEmpty else { return RuleNodeCollection(nodes: []) }
+        if let nodes = input.node?.collectionNodes {
+            return RuleNodeCollection(nodes: try nodes.flatMap {
+                try selectNodes(xpath: path, input: RuleExecutionInput(node: $0), context: context).nodes
+            })
+        }
         let root = try xpathRoot(input)
         return try root.owner.withLock {
             var parser = XPathSubsetParser(path)
