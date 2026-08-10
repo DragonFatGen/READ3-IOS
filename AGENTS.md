@@ -1,5 +1,5 @@
 ﻿# AGENTS.md
-# AGENTS.md
+
 
 ## 1. Project Overview
 
@@ -987,6 +987,21 @@ Before finishing a task, summarize:
 * remaining macOS verification;
 * known limitations.
 
+
+
+
+## Direct Main Development
+
+This repository currently uses direct development on `main`.
+
+- Do not create feature branches unless explicitly requested.
+- Do not create pull requests unless explicitly requested.
+- Do not use GitHub CLI (`gh`) or PR-oriented publishing workflows for normal commits.
+- Use standard local `git` commands for staging, committing, pulling, and pushing.
+- Do not require `gh` to be installed for normal development.
+- Push directly with `git push origin main` when explicitly requested.
+- Preserve unrelated user changes and do not stage them.
+- After pushing, GitHub Actions is the authoritative CI verification environment.
 
 ### PowerShell  使用规范
 在 Windows 环境中执行命令、编写脚本或调用终端时：

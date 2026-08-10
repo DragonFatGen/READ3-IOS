@@ -1,0 +1,12 @@
+[
+  {
+    "bookSourceName": "Modern First",
+    "bookSourceUrl": "https://modern-first.example.invalid",
+    "firstExtra": true
+  },
+  {
+    "bookSourceName": "Modern Second",
+    "bookSourceUrl": "https://modern-second.example.invalid",
+    "secondExtra": 2
+  }
+]

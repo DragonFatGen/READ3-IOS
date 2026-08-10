@@ -1,5 +1,5 @@
 {
-  "bookSourceUrl": "https://batch-single.example.invalid",
-  "bookSourceName": "Batch Single",
-  "futureSingle": {"preserved": true}
+  "bookSourceName": "Single Batch Source",
+  "bookSourceUrl": "https://single-batch.example.invalid",
+  "singleExtra": "preserved"
 }

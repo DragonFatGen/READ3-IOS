@@ -1,17 +1,13 @@
 [
   {
-    "bookSourceUrl": "https://batch-modern.example.invalid",
-    "bookSourceName": "Modern",
-    "ruleSearch": {"name": ".modern@text"},
-    "modernOnly": true
+    "bookSourceName": "Modern Clean",
+    "bookSourceUrl": "https://mixed-modern.example.invalid",
+    "modernOnlyExtra": "modern"
   },
   {
-    "bookSourceUrl": "https://batch-legacy.example.invalid",
-    "bookSourceName": "Legacy",
+    "bookSourceName": "Legacy Migrated",
+    "bookSourceUrl": "https://mixed-legacy.example.invalid",
     "bookSourceType": "AUDIO",
-    "ruleSearchList": ".legacy-book",
-    "ruleSearchName": ".legacy-name@text",
-    "weight": "7",
-    "legacyOnly": true
+    "legacyOnlyExtra": "legacy"
   }
 ]

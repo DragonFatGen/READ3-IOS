@@ -3,27 +3,12 @@ import Foundation
 public struct BookSourceImporter: Sendable {
     public init() {}
 
-    /// Imports exactly one source. Arrays remain invalid for compatibility with the original API.
-    public func importSource(from data: Data) throws -> SourceImportResult {
-        let rawValue: JSONValue
-        do {
-            rawValue = try JSONDecoder().decode(JSONValue.self, from: data)
-        } catch {
-            throw SourceImportError.invalidJSON
-        }
-        return try importSource(from: rawValue)
-    }
-
-    /// Imports an object or array using strict failure semantics.
-    public func importSources(from data: Data) throws -> [SourceImportResult] {
-        try importSources(from: data, policy: .strict).results
-    }
-
-    /// Imports an object or array and reports indexed element failures in lenient mode.
+    /// Imports either one source object or an ordered array of source objects.
+    /// Each array element is processed through ``importSource(from:)`` independently.
     public func importSources(
         from data: Data,
-        policy: SourceImportPolicy
-    ) throws -> SourceBatchImportResult {
+        mode: BatchImportMode = .strict
+    ) throws -> BatchSourceImportResult {
         let rawValue: JSONValue
         do {
             rawValue = try JSONDecoder().decode(JSONValue.self, from: data)
@@ -33,36 +18,46 @@ public struct BookSourceImporter: Sendable {
 
         switch rawValue {
         case .object:
-            return SourceBatchImportResult(
-                results: [try importSource(from: rawValue)],
+            return BatchSourceImportResult(
+                successes: [try importSource(from: data)],
                 failures: []
             )
         case let .array(values):
-            var results: [SourceImportResult] = []
-            var failures: [SourceBatchImportError] = []
-            results.reserveCapacity(values.count)
+            var successes: [SourceImportResult] = []
+            var failures: [BatchSourceImportFailure] = []
 
             for (index, value) in values.enumerated() {
                 do {
-                    results.append(try importSource(from: value))
-                } catch let sourceError as SourceImportError {
-                    let failure = SourceBatchImportError(
-                        index: index,
-                        sourceError: sourceError
-                    )
-                    if policy == .strict {
-                        throw failure
+                    let elementData = try JSONEncoder().encode(value)
+                    successes.append(try importSource(from: elementData))
+                } catch let error as SourceImportError {
+                    if mode == .strict {
+                        throw BatchSourceImportError.elementFailed(index: index, error: error)
                     }
-                    failures.append(failure)
+                    failures.append(BatchSourceImportFailure(index: index, error: error))
+                } catch {
+                    let importError = SourceImportError.normalizedJSONEncodingFailed
+                    if mode == .strict {
+                        throw BatchSourceImportError.elementFailed(index: index, error: importError)
+                    }
+                    failures.append(BatchSourceImportFailure(index: index, error: importError))
                 }
             }
-            return SourceBatchImportResult(results: results, failures: failures)
+
+            return BatchSourceImportResult(successes: successes, failures: failures)
         default:
-            throw SourceImportError.topLevelMustBeObject
+            throw SourceImportError.topLevelMustBeObjectOrArray
         }
     }
 
-    private func importSource(from rawValue: JSONValue) throws -> SourceImportResult {
+    public func importSource(from data: Data) throws -> SourceImportResult {
+        let rawValue: JSONValue
+        do {
+            rawValue = try JSONDecoder().decode(JSONValue.self, from: data)
+        } catch {
+            throw SourceImportError.invalidJSON
+        }
+
         let normalization = try LegacySourceNormalizer().normalize(rawValue)
         let intermediateData: Data
         do {

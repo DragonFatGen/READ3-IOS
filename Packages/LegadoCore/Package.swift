@@ -14,8 +14,14 @@ let package = Package(
             targets: ["LegadoCore"]
         )
     ],
+    dependencies: [
+        .package(url: "https://github.com/scinfu/SwiftSoup.git", exact: "2.13.7")
+    ],
     targets: [
-        .target(name: "LegadoCore"),
+        .target(
+            name: "LegadoCore",
+            dependencies: ["SwiftSoup"]
+        ),
         .testTarget(
             name: "LegadoCoreTests",
             dependencies: ["LegadoCore"]

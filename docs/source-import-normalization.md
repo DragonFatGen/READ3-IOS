@@ -24,13 +24,12 @@ This document describes JSON import only. It does not execute selectors, JavaScr
 ## Import pipeline
 
 `BookSourceImporter.importSource(from:)` remains the single-object API. The batch API accepts
-either one object or a top-level array. `importSources(from:)` is strict by default and returns
-`[SourceImportResult]`. The policy overload returns `SourceBatchImportResult`: strict mode throws
-`SourceBatchImportError` at the first invalid array element, while lenient mode retains successful
-results in input order and records every failure with its array index and `SourceImportError`.
-An empty array succeeds with empty result and failure lists. Scalar top levels remain invalid.
-Each array element is normalized through a fresh state value, so warnings, migrations, and unknown
-fields cannot leak between sources.
+either one object or a top-level array. `importSources(from:mode:)` is strict by default and
+returns `BatchSourceImportResult`. Strict mode throws `BatchSourceImportError` at the first
+invalid array element, while lenient mode retains successful results in input order and records
+every failure with its array index and `SourceImportError`. An empty array succeeds with empty
+success and failure lists. Scalar top levels remain invalid. Each array element is normalized
+independently, so warnings, migrations, and unknown fields cannot leak between sources.
 
 ```text
 raw Data
