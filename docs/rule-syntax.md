@@ -180,10 +180,12 @@ references, and `@put`/`@get` now have execution behavior and dedicated IR where
 needed. Regex compilation remains an execution-stage operation.
 
 Historical/default, explicit CSS, JSONPath, and the documented XPath subset
-execute when `LegadoRuleSelectorExecutor` is injected. JavaScript, network,
-WebView, persistence, and UI remain out of scope. Selector compatibility
-boundaries are documented in `docs/rule-jsoup.md`, `docs/rule-jsonpath.md`, and
-`docs/rule-xpath.md`.
+execute when `LegadoRuleSelectorExecutor` is injected. Pure JavaScript executes
+when a `RuleJavaScriptExecutor` is injected; without one, non-empty JavaScript
+still fails explicitly. Network-backed `java.*`, WebView, persistence, and UI
+remain out of scope. Compatibility boundaries are documented in
+`docs/rule-jsoup.md`, `docs/rule-jsonpath.md`, `docs/rule-xpath.md`, and
+`docs/rule-javascript.md`.
 
 The dynamic boundary follows Android `makeUpRule`: a rule-shaped body inside
 `{{...}}` is recursively parsed and evaluated, but the completed outer template

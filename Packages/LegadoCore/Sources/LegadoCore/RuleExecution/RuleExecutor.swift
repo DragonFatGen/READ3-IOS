@@ -2,9 +2,14 @@ import Foundation
 
 public struct RuleExecutor: Sendable {
     private let selectorExecutor: (any RuleSelectorExecutor)?
+    private let javaScriptExecutor: (any RuleJavaScriptExecutor)?
 
-    public init(selectorExecutor: (any RuleSelectorExecutor)? = nil) {
+    public init(
+        selectorExecutor: (any RuleSelectorExecutor)? = nil,
+        javaScriptExecutor: (any RuleJavaScriptExecutor)? = nil
+    ) {
         self.selectorExecutor = selectorExecutor
+        self.javaScriptExecutor = javaScriptExecutor
     }
 
     public func execute(
@@ -45,8 +50,8 @@ public struct RuleExecutor: Sendable {
             return try selectorExecutor.execute(xpath: rule, input: input, context: context)
         case .javaScript(""):
             return .none
-        case .javaScript:
-            throw RuleExecutionError.unsupportedExecutionNode("JavaScript")
+        case let .javaScript(script):
+            return try executeJavaScript(script, input: input, context: &context).ruleValue
         case let .regex(rule):
             return try executeRegex(rule, on: input, context: &context)
         case let .replacement(base, rule):
@@ -96,6 +101,9 @@ public struct RuleExecutor: Sendable {
         for part in template.parts {
             switch part {
             case let .literal(value): result += value
+            case .expression(.javaScript("")): break
+            case let .expression(.javaScript(script)):
+                result += try executeJavaScript(script, input: input, context: &context).templateString
             case let .expression(expression):
                 result += try evaluate(expression, input: input, context: &context).stringValue
             }
@@ -103,6 +111,21 @@ public struct RuleExecutor: Sendable {
         // Android reparses rule-shaped bodies inside {{...}}, but does not reparse the
         // fully expanded outer string. Operators produced here therefore stay text.
         return .string(result)
+    }
+
+    private func executeJavaScript(
+        _ script: String,
+        input: RuleValue,
+        context: inout RuleExecutionContext
+    ) throws -> JavaScriptExecutionResult {
+        guard let javaScriptExecutor else {
+            throw RuleExecutionError.unsupportedExecutionNode("JavaScript")
+        }
+        context.currentResult = input
+        return try javaScriptExecutor.execute(
+            script: script,
+            context: JavaScriptExecutionContext(ruleContext: context)
+        )
     }
 
     private func combine(

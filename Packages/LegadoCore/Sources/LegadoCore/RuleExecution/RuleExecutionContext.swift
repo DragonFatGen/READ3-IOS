@@ -9,6 +9,10 @@ public struct RuleVariableStore: Sendable, Equatable {
         get { values[key] }
         set { values[key] = newValue }
     }
+
+    /// An immutable copy suitable for execution adapters. Adapters cannot mutate
+    /// the native `@put`/`@get` store through this boundary.
+    public var snapshot: [String: String] { values }
 }
 
 public struct RuleExecutionContext: Sendable, Equatable {

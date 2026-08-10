@@ -25,10 +25,11 @@ Compatible execution retains an unavailable `$n` reference; strict execution
 diagnoses it.
 
 Template bodies beginning with `@`, `$.`, `$[`, or `//` become a nested
-`SourceRule`; other bodies are JavaScript. This phase does not execute
-JavaScript. An empty JavaScript body contributes no text, and a non-empty body
-is explicitly unsupported. Android does not reclassify the fully expanded outer
-string, so dynamically generated operators remain text.
+`SourceRule`; other bodies are JavaScript. An empty JavaScript body contributes
+no text. A non-empty body executes only when a `RuleJavaScriptExecutor` is
+injected; otherwise it remains explicitly unsupported. Android does not
+reclassify the fully expanded outer string, so dynamically generated operators
+remain text.
 
 `splitPutRule` removes case-insensitive `@put:{...}` objects. `putRule` evaluates
 each string value as a rule before the main stage, and a later write replaces an
@@ -66,12 +67,24 @@ routes historical/default and explicit CSS extraction to SwiftSoup, JSONPath to
 the JSONValue evaluator, and XPath to the SwiftSoup-backed XPath subset. Without
 an adapter, selector nodes still fail explicitly.
 
+`RuleJavaScriptExecutor` is a separate synchronous injection boundary. It
+receives a platform-neutral snapshot containing the preceding result, base URL,
+and source/temporary variables, and returns an explicit scalar/array/object
+snapshot. `LegadoCore` does not import JavaScriptCore. The Apple adapter creates
+a fresh `JSContext` for each pure-JavaScript execution. Detailed Android
+evidence, conversions, and deferred bridges are in `docs/rule-javascript.md`.
+
 ## Known differences and deferred work
 
 - Android can persist very large chapter/book variables outside its map; this
   core foundation has no persistence adapter.
-- Android template JavaScript can return numbers, objects, and lists; JavaScript
-  is deliberately unsupported here.
+- Android can expose native Java/book/source/DOM objects. The current JavaScript
+  boundary retains only null/undefined, scalar, array, and string-keyed object
+  snapshots; objects use deterministic sorted compact JSON when converted to a
+  `RuleValue`.
+- `java.ajax/get/post`, cookies, persistent source state, and WebView JavaScript
+  remain deferred. `RuleExecutor` stays synchronous and performs no blocking
+  bridge to the asynchronous HTTP client.
 - JSONPath and XPath support intentionally covers documented compatibility
   subsets. Their boundaries are recorded in `docs/rule-jsonpath.md` and
   `docs/rule-xpath.md`; JSoup/CSS behavior remains in `docs/rule-jsoup.md`.

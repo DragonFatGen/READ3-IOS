@@ -21,3 +21,27 @@ targets:
         SWIFT_VERSION: "6.0"
     dependencies:
       - package: LegadoCore
+
+  LegadoIOSTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: Apple/LegadoIOSTests
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
+    dependencies:
+      - target: LegadoIOS
+      - package: LegadoCore
+
+schemes:
+  LegadoIOS:
+    build:
+      targets:
+        LegadoIOS: all
+        LegadoIOSTests: [test]
+    test:
+      targets:
+        - LegadoIOSTests
