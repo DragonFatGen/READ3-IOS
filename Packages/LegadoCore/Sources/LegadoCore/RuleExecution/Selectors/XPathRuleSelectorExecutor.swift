@@ -27,6 +27,49 @@ public struct XPathRuleSelectorExecutor: RuleSelectorExecutor {
         }
     }
 
+    public func execute(
+        xpath path: String,
+        input: RuleExecutionInput,
+        context: RuleExecutionContext
+    ) throws -> RuleValue {
+        guard !path.isEmpty else { return .none }
+        do {
+            let root = try xpathRoot(input)
+            return try root.owner.withLock {
+                var parser = XPathSubsetParser(path)
+                let values = try XPathSubsetEvaluator(roots: root.roots).evaluate(parser.parse())
+                let strings = try values.map(serialize)
+                return strings.isEmpty ? .none : .strings(strings)
+            }
+        } catch let error as RuleExecutionError {
+            throw error
+        } catch {
+            throw RuleExecutionError.invalidDocument(String(describing: error))
+        }
+    }
+
+    public func selectNodes(
+        xpath path: String,
+        input: RuleExecutionInput,
+        context: RuleExecutionContext
+    ) throws -> RuleNodeCollection {
+        guard !path.isEmpty else { return RuleNodeCollection(nodes: []) }
+        let root = try xpathRoot(input)
+        return try root.owner.withLock {
+            var parser = XPathSubsetParser(path)
+            let values = try XPathSubsetEvaluator(roots: root.roots).evaluate(parser.parse())
+            let elements = try values.map { value -> Element in
+                guard case let .element(element) = value else {
+                    throw RuleExecutionError.xpathResultTypeMismatch("book-list XPath must return element nodes")
+                }
+                return element
+            }
+            return RuleNodeCollection(nodes: elements.map {
+                RuleNode(storage: .html(HTMLRuleNode(owner: root.owner, element: $0)))
+            })
+        }
+    }
+
     private func htmlInput(_ input: RuleValue) -> String {
         let value: String
         switch input {
@@ -39,6 +82,19 @@ public struct XPathRuleSelectorExecutor: RuleSelectorExecutor {
             return "<table>\(value)</table>"
         }
         return value
+    }
+
+    private func xpathRoot(
+        _ input: RuleExecutionInput
+    ) throws -> (owner: HTMLRuleNodeOwner, roots: [Element]) {
+        if let node = input.node {
+            guard case let .html(html) = node.storage else {
+                throw RuleExecutionError.unsupportedExecutionNode("XPath over a JSON node")
+            }
+            return (html.owner, [html.element])
+        }
+        let document = try SwiftSoup.parse(htmlInput(input.value))
+        return (HTMLRuleNodeOwner(retaining: [document]), document.children().array())
     }
 
     private func serialize(_ value: XPathValue) throws -> String {

@@ -27,6 +27,51 @@ public struct JSONPathRuleSelectorExecutor: RuleSelectorExecutor {
         }
     }
 
+    public func execute(
+        jsonPath path: String,
+        input: RuleExecutionInput,
+        context: RuleExecutionContext
+    ) throws -> RuleValue {
+        do {
+            let root = try decode(input)
+            let values = try evaluate(path, root: root)
+            guard !values.isEmpty else { throw RuleExecutionError.pathNotFound(path) }
+            let strings = values.flatMap(androidListProjection).map(androidString)
+            return strings.isEmpty ? .none : .strings(strings)
+        } catch let error as RuleExecutionError {
+            if context.errorPolicy == .legadoCompatible { return .none }
+            throw error
+        } catch {
+            if context.errorPolicy == .legadoCompatible { return .none }
+            throw RuleExecutionError.invalidJSONPath(path)
+        }
+    }
+
+    public func selectNodes(
+        jsonPath path: String,
+        input: RuleExecutionInput,
+        context: RuleExecutionContext
+    ) throws -> RuleNodeCollection {
+        do {
+            let values = try evaluate(path, root: decode(input))
+            let items: [JSONValue]
+            if values.count == 1, case let .array(array) = values[0] {
+                items = array
+            } else {
+                items = values
+            }
+            return RuleNodeCollection(nodes: items.map {
+                RuleNode(storage: .json($0))
+            })
+        } catch let error as RuleExecutionError {
+            if context.errorPolicy == .legadoCompatible { return RuleNodeCollection(nodes: []) }
+            throw error
+        } catch {
+            if context.errorPolicy == .legadoCompatible { return RuleNodeCollection(nodes: []) }
+            throw RuleExecutionError.invalidJSONPath(path)
+        }
+    }
+
     public func execute(xpath: String, input: RuleValue, context: RuleExecutionContext) throws -> RuleValue {
         throw RuleExecutionError.unsupportedExecutionNode("XPath")
     }
@@ -46,6 +91,21 @@ public struct JSONPathRuleSelectorExecutor: RuleSelectorExecutor {
             // every list item as another JSON document.
             return .array(values.map(JSONValue.string))
         }
+    }
+
+    private func decode(_ input: RuleExecutionInput) throws -> JSONValue {
+        if let node = input.node {
+            guard case let .json(value) = node.storage else {
+                throw RuleExecutionError.unsupportedExecutionNode("JSONPath over an HTML node")
+            }
+            return value
+        }
+        return try decode(input.value)
+    }
+
+    private func evaluate(_ path: String, root: JSONValue) throws -> [JSONValue] {
+        var parser = JSONPathParser(path)
+        return try JSONPathEvaluator(root: root).evaluate(parser.parse())
     }
 
     private func androidListProjection(_ value: JSONValue) -> [JSONValue] {

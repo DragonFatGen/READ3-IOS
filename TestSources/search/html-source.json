@@ -1,0 +1,1 @@
+{"bookSourceName":"Fixture HTML","bookSourceUrl":"https://example.invalid","searchUrl":"https://example.invalid/search?q={{key}}&page={{page}}","ruleSearch":{"bookList":"class.book","name":"tag.h2@text","author":"class.author@text","bookUrl":"tag.a@href"}}

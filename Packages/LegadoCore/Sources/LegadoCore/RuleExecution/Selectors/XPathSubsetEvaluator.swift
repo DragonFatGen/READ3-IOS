@@ -15,6 +15,10 @@ struct XPathSubsetEvaluator {
         roots = document.children().array()
     }
 
+    init(roots: [Element]) {
+        self.roots = roots
+    }
+
     func evaluate(_ expression: XPathExpression) throws -> [XPathValue] {
         switch expression {
         case let .path(path):

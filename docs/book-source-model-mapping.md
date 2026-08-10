@@ -43,8 +43,8 @@ This mapping is based on the following Android sources, not inferred from field 
 | BookSource | weight | weight | Int | Int | `0` | No | Same key | Stored metadata | Yes |
 | BookSource | exploreUrl | exploreUrl | String? | String? | null | Yes | `ruleFindUrl` | Stored, not requested | Yes |
 | BookSource | ruleExplore | ruleExplore | ExploreRule? | ExploreRule? | null | Yes | Object or JSON-object string; legacy root fields | Stored, not executed | Yes |
-| BookSource | searchUrl | searchUrl | String? | String? | null | Yes | `ruleSearchUrl` | Stored, not requested | Yes |
-| BookSource | ruleSearch | ruleSearch | SearchRule? | SearchRule? | null | Yes | Object or JSON-object string; legacy root fields | Stored, not executed | Yes |
+| BookSource | searchUrl | searchUrl | String? | String? | null | Yes | `ruleSearchUrl` | Executed by `BookSourceSearchRuntime` | Yes |
+| BookSource | ruleSearch | ruleSearch | SearchRule? | SearchRule? | null | Yes | Object or JSON-object string; legacy root fields | Book-list and search fields executed | Yes |
 | BookSource | ruleBookInfo | ruleBookInfo | BookInfoRule? | BookInfoRule? | null | Yes | Object or JSON-object string; legacy root fields | Stored, not executed | Yes |
 | BookSource | ruleToc | ruleToc | TocRule? | TocRule? | null | Yes | Object or JSON-object string; legacy root fields | Stored, not executed | Yes |
 | BookSource | ruleContent | ruleContent | ContentRule? | ContentRule? | null | Yes | Object or JSON-object string; legacy root fields | Stored, not executed | Yes |

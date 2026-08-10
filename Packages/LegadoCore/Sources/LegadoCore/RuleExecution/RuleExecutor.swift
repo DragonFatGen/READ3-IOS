@@ -17,46 +17,40 @@ public struct RuleExecutor: Sendable {
         input: RuleExecutionInput,
         context: inout RuleExecutionContext
     ) throws -> RuleExecutionResult {
-        let value = try evaluate(expression, input: input.value, context: &context)
+        let value = try evaluate(expression, input: input, context: &context)
         context.currentResult = value
         return RuleExecutionResult(value: value, context: context)
     }
 
     private func evaluate(
         _ expression: RuleExpression,
-        input: RuleValue,
+        input: RuleExecutionInput,
         context: inout RuleExecutionContext
     ) throws -> RuleValue {
-        context.currentResult = input
+        context.currentResult = input.value
         switch expression {
         case .empty:
             return .none
         case let .selector(rule):
-            guard let selectorExecutor else {
-                throw RuleExecutionError.unsupportedExecutionNode("selector")
-            }
-            return try selectorExecutor.execute(selector: rule, input: input, context: context)
+            return try executeSelector(rule, input: input, context: context)
         case let .jsonPath(rule):
-            guard let selectorExecutor else {
-                throw RuleExecutionError.unsupportedExecutionNode("JSONPath")
-            }
-            return try selectorExecutor.execute(jsonPath: rule, input: input, context: context)
+            return try executeJSONPath(rule, input: input, context: context)
         case let .jsonPathTemplate(template):
             return try expand(template, input: input, context: &context)
         case let .xpath(rule):
-            guard let selectorExecutor else {
-                throw RuleExecutionError.unsupportedExecutionNode("XPath")
-            }
-            return try selectorExecutor.execute(xpath: rule, input: input, context: context)
+            return try executeXPath(rule, input: input, context: context)
         case .javaScript(""):
             return .none
         case let .javaScript(script):
+            guard input.node == nil else {
+                throw RuleExecutionError.unsupportedExecutionNode("JavaScript structured input")
+            }
             return try executeJavaScript(script, input: input, context: &context).ruleValue
         case let .regex(rule):
-            return try executeRegex(rule, on: input, context: &context)
+            return try executeRegex(rule, on: scalarValue(input), context: &context)
         case let .replacement(base, rule):
             let baseValue = if case .empty = base {
-                input
+                try scalarValue(input)
             } else {
                 try evaluate(base, input: input, context: &context)
             }
@@ -66,10 +60,10 @@ public struct RuleExecutor: Sendable {
         case let .sequence(expressions):
             var value = input
             for item in expressions {
-                if value == .none { break }
-                value = try evaluate(item, input: value, context: &context)
+                if value.value == .none, value.node == nil { break }
+                value = RuleExecutionInput(try evaluate(item, input: value, context: &context))
             }
-            return value
+            return try scalarValue(value)
         case let .combination(operation, branches):
             return try combine(operation, branches: branches, input: input, context: &context)
         case let .variableRead(key):
@@ -79,7 +73,7 @@ public struct RuleExecutor: Sendable {
                 let value = try evaluate(assignment.value, input: input, context: &context)
                 context.setTemporaryVariable(value.stringValue, named: assignment.key)
             }
-            if case .empty = body { return input }
+            if case .empty = body { return try scalarValue(input) }
             return try evaluate(body, input: input, context: &context)
         case let .captureGroup(index):
             guard context.captureGroups.indices.contains(index) else {
@@ -94,7 +88,7 @@ public struct RuleExecutor: Sendable {
 
     private func expand(
         _ template: TemplateExpression,
-        input: RuleValue,
+        input: RuleExecutionInput,
         context: inout RuleExecutionContext
     ) throws -> RuleValue {
         var result = ""
@@ -103,6 +97,9 @@ public struct RuleExecutor: Sendable {
             case let .literal(value): result += value
             case .expression(.javaScript("")): break
             case let .expression(.javaScript(script)):
+                guard input.node == nil else {
+                    throw RuleExecutionError.unsupportedExecutionNode("JavaScript structured input")
+                }
                 result += try executeJavaScript(script, input: input, context: &context).templateString
             case let .expression(expression):
                 result += try evaluate(expression, input: input, context: &context).stringValue
@@ -115,13 +112,13 @@ public struct RuleExecutor: Sendable {
 
     private func executeJavaScript(
         _ script: String,
-        input: RuleValue,
+        input: RuleExecutionInput,
         context: inout RuleExecutionContext
     ) throws -> JavaScriptExecutionResult {
         guard let javaScriptExecutor else {
             throw RuleExecutionError.unsupportedExecutionNode("JavaScript")
         }
-        context.currentResult = input
+        context.currentResult = input.value
         return try javaScriptExecutor.execute(
             script: script,
             context: JavaScriptExecutionContext(ruleContext: context)
@@ -131,7 +128,7 @@ public struct RuleExecutor: Sendable {
     private func combine(
         _ operation: RuleOperator,
         branches: [RuleExpression],
-        input: RuleValue,
+        input: RuleExecutionInput,
         context: inout RuleExecutionContext
     ) throws -> RuleValue {
         if operation == .child {
@@ -144,7 +141,13 @@ public struct RuleExecutor: Sendable {
                 }
                 return selector
             }
-            return try selectorExecutor.execute(childChain: chain, input: input, context: context)
+            if input.node != nil {
+                guard let nodeExecutor = selectorExecutor as? any RuleNodeSelectorExecutor else {
+                    throw RuleExecutionError.unsupportedExecutionNode("structured historical selector child chain")
+                }
+                return try nodeExecutor.execute(childChain: chain, input: input, context: context)
+            }
+            return try selectorExecutor.execute(childChain: chain, input: input.value, context: context)
         }
         var values: [RuleValue] = []
         for branch in branches {
@@ -167,6 +170,62 @@ public struct RuleExecutor: Sendable {
         }
         if values.count == 1 { return values[0] }
         return .strings(values.flatMap(\.stringValues))
+    }
+
+    private func executeSelector(
+        _ rule: SelectorRule,
+        input: RuleExecutionInput,
+        context: RuleExecutionContext
+    ) throws -> RuleValue {
+        guard let selectorExecutor else {
+            throw RuleExecutionError.unsupportedExecutionNode("selector")
+        }
+        if input.node != nil {
+            guard let nodeExecutor = selectorExecutor as? any RuleNodeSelectorExecutor else {
+                throw RuleExecutionError.unsupportedExecutionNode("structured selector input")
+            }
+            return try nodeExecutor.execute(selector: rule, input: input, context: context)
+        }
+        return try selectorExecutor.execute(selector: rule, input: input.value, context: context)
+    }
+
+    private func executeJSONPath(
+        _ path: String,
+        input: RuleExecutionInput,
+        context: RuleExecutionContext
+    ) throws -> RuleValue {
+        guard let selectorExecutor else {
+            throw RuleExecutionError.unsupportedExecutionNode("JSONPath")
+        }
+        if input.node != nil {
+            guard let nodeExecutor = selectorExecutor as? any RuleNodeSelectorExecutor else {
+                throw RuleExecutionError.unsupportedExecutionNode("structured JSONPath input")
+            }
+            return try nodeExecutor.execute(jsonPath: path, input: input, context: context)
+        }
+        return try selectorExecutor.execute(jsonPath: path, input: input.value, context: context)
+    }
+
+    private func executeXPath(
+        _ path: String,
+        input: RuleExecutionInput,
+        context: RuleExecutionContext
+    ) throws -> RuleValue {
+        guard let selectorExecutor else {
+            throw RuleExecutionError.unsupportedExecutionNode("XPath")
+        }
+        if input.node != nil {
+            guard let nodeExecutor = selectorExecutor as? any RuleNodeSelectorExecutor else {
+                throw RuleExecutionError.unsupportedExecutionNode("structured XPath input")
+            }
+            return try nodeExecutor.execute(xpath: path, input: input, context: context)
+        }
+        return try selectorExecutor.execute(xpath: path, input: input.value, context: context)
+    }
+
+    private func scalarValue(_ input: RuleExecutionInput) throws -> RuleValue {
+        if let node = input.node { return .string(try node.scalarString()) }
+        return input.value
     }
 
     private func executeRegex(

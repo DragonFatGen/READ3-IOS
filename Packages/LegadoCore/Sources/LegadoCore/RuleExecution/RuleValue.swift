@@ -30,8 +30,15 @@ public enum RuleValue: Sendable, Equatable {
 
 public struct RuleExecutionInput: Sendable, Equatable {
     public let value: RuleValue
+    public let node: RuleNode?
 
     public init(_ value: RuleValue) {
         self.value = value
+        node = nil
+    }
+
+    public init(node: RuleNode) {
+        value = .none
+        self.node = node
     }
 }
