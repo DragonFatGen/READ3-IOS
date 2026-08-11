@@ -83,6 +83,7 @@ public struct BookSourceBookInfoRuntime: Sendable {
             throw BookInfoError.initRuleFailed(error.localizedDescription)
         }
 
+        let hasInitRule = nonblank(rules.`init`) != nil
         if let initRule = nonblank(rules.`init`) {
             if requiresNetworkHost(initRule) {
                 throw BookInfoError.unsupportedJavaScriptNetworkHost
@@ -120,39 +121,48 @@ public struct BookSourceBookInfoRuntime: Sendable {
         }
 
         let allowsRename = nonblank(rules.canReName) != nil
+        let responseStringInput = hasInitRule ? nil : responseInput
         var name = book.name
         let parsedName = formatName(try requiredField(
-            "name", rule: rules.name, input: fieldInput, context: &context
+            "name", rule: rules.name, input: fieldInput,
+            responseStringInput: responseStringInput, context: &context
         ))
         if !parsedName.isEmpty, allowsRename || name.isEmpty { name = parsedName }
 
         var author = book.author
         let parsedAuthor = formatAuthor(try requiredField(
-            "author", rule: rules.author, input: fieldInput, context: &context
+            "author", rule: rules.author, input: fieldInput,
+            responseStringInput: responseStringInput, context: &context
         ))
         if !parsedAuthor.isEmpty, allowsRename || author.isEmpty { author = parsedAuthor }
 
         let kind = try optionalField(
-            "kind", rule: rules.kind, input: fieldInput, context: &context, join: ","
+            "kind", rule: rules.kind, input: fieldInput,
+            responseStringInput: responseStringInput, context: &context, join: ","
         ).flatMap(nonblank) ?? book.kind
         let wordCount = formatWordCount(try optionalField(
-            "wordCount", rule: rules.wordCount, input: fieldInput, context: &context
+            "wordCount", rule: rules.wordCount, input: fieldInput,
+            responseStringInput: responseStringInput, context: &context
         )).flatMap(nonblank) ?? book.wordCount
         let lastChapter = try optionalField(
-            "lastChapter", rule: rules.lastChapter, input: fieldInput, context: &context
+            "lastChapter", rule: rules.lastChapter, input: fieldInput,
+            responseStringInput: responseStringInput, context: &context
         ).flatMap(nonblank) ?? book.lastChapter
         let intro = formatIntro(try optionalField(
-            "intro", rule: rules.intro, input: fieldInput, context: &context
+            "intro", rule: rules.intro, input: fieldInput,
+            responseStringInput: responseStringInput, context: &context
         )).flatMap(nonblank) ?? book.intro
         let coverRaw = try optionalField(
-            "coverUrl", rule: rules.coverUrl, input: fieldInput, context: &context
+            "coverUrl", rule: rules.coverUrl, input: fieldInput,
+            responseStringInput: responseStringInput, context: &context
         )
         let coverURL = coverRaw.flatMap(nonblank)
             .map { urlResolver.resolve($0, against: response.finalURL.absoluteString) }
             ?? book.coverURL
 
         let tocRaw = try requiredField(
-            "tocUrl", rule: rules.tocUrl, input: fieldInput, context: &context
+            "tocUrl", rule: rules.tocUrl, input: fieldInput,
+            responseStringInput: responseStringInput, context: &context
         )
         let tocURL = nonblank(tocRaw).map {
             urlResolver.resolve($0, against: response.finalURL.absoluteString)
@@ -179,11 +189,16 @@ public struct BookSourceBookInfoRuntime: Sendable {
         _ field: String,
         rule: String?,
         input: RuleExecutionInput,
+        responseStringInput: RuleExecutionInput?,
         context: inout RuleExecutionContext
     ) throws -> String {
         guard let rule = nonblank(rule) else { return "" }
         if requiresNetworkHost(rule) { throw BookInfoError.unsupportedJavaScriptNetworkHost }
-        do { return try executeField(rule, input: input, context: &context).stringValue }
+        do {
+            return try executeField(
+                rule, input: input, responseStringInput: responseStringInput, context: &context
+            ).stringValue
+        }
         catch let error as BookInfoError { throw error }
         catch { throw BookInfoError.fieldRuleFailed(field: field, message: error.localizedDescription) }
     }
@@ -192,13 +207,16 @@ public struct BookSourceBookInfoRuntime: Sendable {
         _ field: String,
         rule: String?,
         input: RuleExecutionInput,
+        responseStringInput: RuleExecutionInput?,
         context: inout RuleExecutionContext,
         join: String = "\n"
     ) throws -> String? {
         guard let rule = nonblank(rule) else { return nil }
         if requiresNetworkHost(rule) { throw BookInfoError.unsupportedJavaScriptNetworkHost }
         do {
-            return try executeField(rule, input: input, context: &context)
+            return try executeField(
+                rule, input: input, responseStringInput: responseStringInput, context: &context
+            )
                 .stringValues.joined(separator: join)
         } catch let error as BookInfoError {
             throw error
@@ -212,6 +230,7 @@ public struct BookSourceBookInfoRuntime: Sendable {
     private func executeField(
         _ rule: String,
         input: RuleExecutionInput,
+        responseStringInput: RuleExecutionInput?,
         context: inout RuleExecutionContext
     ) throws -> RuleValue {
         context.currentResult = .none
@@ -219,10 +238,15 @@ public struct BookSourceBookInfoRuntime: Sendable {
         let contentIsJSON = input.node?.kind == .json ||
             input.nodes?.nodes.first?.kind == .json
         let expression = try parser.parse(rule, context: RuleParseContext(contentIsJSON: contentIsJSON))
+        let executionInput = if case .javaScript = expression {
+            responseStringInput ?? input
+        } else {
+            input
+        }
         return try RuleExecutor(
             selectorExecutor: selectorExecutor,
             javaScriptExecutor: javaScriptExecutor
-        ).execute(expression, input: input, context: &context).value
+        ).execute(expression, input: executionInput, context: &context).value
     }
 
     private func requiresNetworkHost(_ rule: String) -> Bool {

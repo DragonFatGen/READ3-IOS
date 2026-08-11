@@ -60,7 +60,7 @@ public struct RuleExecutor: Sendable {
         case let .sequence(expressions):
             var value = input
             for item in expressions {
-                if value.value == .none, value.node == nil { break }
+                if value.value == .none, !value.hasStructuredValue { break }
                 value = RuleExecutionInput(try evaluate(item, input: value, context: &context))
             }
             return try scalarValue(value)
