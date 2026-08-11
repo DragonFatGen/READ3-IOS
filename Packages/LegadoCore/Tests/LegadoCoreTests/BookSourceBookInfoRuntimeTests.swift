@@ -331,8 +331,10 @@ final class BookSourceBookInfoRuntimeTests: XCTestCase {
         sourceB.ruleBookInfo?.author = "@get:{saved}"
         let isolatedSourceA = sourceA
         let isolatedSourceB = sourceB
-        async let a = runtimeA.fetchBookInfo(source: isolatedSourceA, book: book(url: "https://a.invalid/book"))
-        async let b = runtimeB.fetchBookInfo(source: isolatedSourceB, book: book(url: "https://b.invalid/book"))
+        let bookA = book(url: "https://a.invalid/book")
+        let bookB = book(url: "https://b.invalid/book")
+        async let a = runtimeA.fetchBookInfo(source: isolatedSourceA, book: bookA)
+        async let b = runtimeB.fetchBookInfo(source: isolatedSourceB, book: bookB)
         let values = try await (a, b)
         XCTAssertEqual([values.0.name, values.0.author, values.0.tocURL], ["A", "AA", "https://a.invalid/a"])
         XCTAssertEqual([values.1.name, values.1.author, values.1.tocURL], ["B", "BB", "https://b.invalid/b"])
