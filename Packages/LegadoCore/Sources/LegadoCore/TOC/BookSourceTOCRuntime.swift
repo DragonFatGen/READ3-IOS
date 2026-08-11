@@ -229,6 +229,9 @@ public struct BookSourceTOCRuntime: Sendable {
             nextURLs = []
         }
 
+        // AnalyzeRule.putRule writes getString's result to Book even when the
+        // selector produced no value: getString normalizes that case to "" and
+        // Book.putVariable stores it. Preserve that overwrite across TOC pages.
         bookVariables.merge(pageContext.temporaryVariables.snapshot) { _, new in new }
         var parsedChapters: [ParsedChapter] = []
         for (itemIndex, item) in items.nodes.enumerated() {

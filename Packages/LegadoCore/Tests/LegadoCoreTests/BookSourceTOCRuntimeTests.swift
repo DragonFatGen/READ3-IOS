@@ -308,7 +308,7 @@ final class BookSourceTOCRuntimeTests: XCTestCase {
 
     func testPageVariablesCrossSequentialPagination() async throws {
         let firstBody = "<b id='prefix'>Shared</b><ul id='toc'><li><a href='/1'>One</a></li></ul><a id='next' href='2'>next</a>"
-        let secondBody = "<ul id='toc'><li><a href='/2'>Two</a></li></ul>"
+        let secondBody = "<b id='prefix'>Updated</b><ul id='toc'><li><a href='/2'>Two</a></li></ul>"
         let client = MockHTTPClient(results: [
             .success(try response(body: firstBody, finalURL: "https://example.invalid/toc/1")),
             .success(try response(body: secondBody, finalURL: "https://example.invalid/toc/2"))
@@ -321,7 +321,31 @@ final class BookSourceTOCRuntimeTests: XCTestCase {
             source: source,
             book: book(tocURL: "https://example.invalid/toc/1")
         )
-        XCTAssertEqual(chapters.map(\.name), ["Shared", "Shared"])
+        XCTAssertEqual(chapters.map(\.name), ["Shared", "Updated"])
+    }
+
+    func testEmptyPagePutOverwritesPreviousBookVariable() async throws {
+        let firstBody = "<b id='prefix'>Shared</b><ul id='toc'><li><a href='/1'>One</a></li></ul><a id='next' href='2'>next</a>"
+        let secondBody = "<ul id='toc'><li><a href='/2'>Two</a></li></ul>"
+        let client = MockHTTPClient(results: [
+            .success(try response(body: firstBody, finalURL: "https://example.invalid/toc/1")),
+            .success(try response(body: secondBody, finalURL: "https://example.invalid/toc/2"))
+        ])
+        var source = minimalListSource()
+        source.ruleToc?.chapterList = #"id.toc@tag.li@put:{"prefix":"id.prefix@text"}"#
+        source.ruleToc?.chapterName = "tag.a@text"
+        source.ruleToc?.chapterUrl = "@get:{prefix}"
+        source.ruleToc?.nextTocUrl = "id.next@href"
+
+        let chapters = try await BookSourceTOCRuntime(httpClient: client).fetchTOC(
+            source: source,
+            book: book(tocURL: "https://example.invalid/toc/1")
+        )
+
+        XCTAssertEqual(chapters.map(\.url), [
+            "https://example.invalid/toc/Shared",
+            "https://example.invalid/toc/2"
+        ])
     }
 
     func testJavaScriptAfterScalarSelectorUsesInjectedExecutor() async throws {

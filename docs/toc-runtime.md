@@ -126,6 +126,13 @@ and are visible on later pages. Each item then assigns a fresh `BookChapter` to
 of the same item, and do not leak to another item. Each field restarts `result`
 from the item node; the previous field result is not the next field input.
 
+`AnalyzeRule.putRule` obtains every native `@put` value through `getString`. A
+missing selector is therefore normalized to `""`, and `Book.putVariable` stores
+that empty string, replacing any value written by an earlier page. Only an actual
+`null` passed to `putVariable` removes a variable; native `@put` does not use that
+path. Swift keeps the same empty-result overwrite behavior when it commits a page
+context to the book-scoped pagination variables.
+
 Swift represents this with one book-scoped page context per `fetchTOC` and a fresh
 item context seeded from the page variables for every chapter. Pages share the
 book-scoped values; items share values only across their own ordered fields.
