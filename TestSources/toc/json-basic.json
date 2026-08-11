@@ -1,0 +1,8 @@
+{
+  "data": {
+    "chapters": [
+      {"name":"JSON One","url":"/json/1","volume":"false","vip":"1","pay":"0","time":"today"},
+      {"name":"JSON Two","url":"json/2","volume":"true","vip":"no","pay":"yes","time":"tomorrow"}
+    ]
+  }
+}

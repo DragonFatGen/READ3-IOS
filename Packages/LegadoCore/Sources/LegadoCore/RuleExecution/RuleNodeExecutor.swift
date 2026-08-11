@@ -129,6 +129,20 @@ public struct RuleNodeExecutor: Sendable {
                 return RuleNodeCollection(nodes: result)
             }
             return RuleNodeCollection(nodes: collections.flatMap { $0 })
+        case let .variableWrite(assignments, body):
+            let scalarExecutor = RuleExecutor(
+                selectorExecutor: selectorExecutor,
+                javaScriptExecutor: javaScriptExecutor
+            )
+            for assignment in assignments {
+                let value = try scalarExecutor.execute(
+                    assignment.value,
+                    input: input,
+                    context: &context
+                ).value
+                context.setTemporaryVariable(value.stringValue, named: assignment.key)
+            }
+            return try evaluate(body, input: input, context: &context)
         default:
             throw RuleExecutionError.unsupportedExecutionNode("structured book-list expression")
         }
