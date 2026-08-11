@@ -33,12 +33,6 @@ public struct XPathRuleSelectorExecutor: RuleSelectorExecutor {
         context: RuleExecutionContext
     ) throws -> RuleValue {
         guard !path.isEmpty else { return .none }
-        if let nodes = input.node?.collectionNodes {
-            let values = try nodes.flatMap {
-                try execute(xpath: path, input: RuleExecutionInput(node: $0), context: context).stringValues
-            }
-            return values.isEmpty ? .none : .strings(values)
-        }
         do {
             let root = try xpathRoot(input)
             return try root.owner.withLock {
@@ -60,11 +54,6 @@ public struct XPathRuleSelectorExecutor: RuleSelectorExecutor {
         context: RuleExecutionContext
     ) throws -> RuleNodeCollection {
         guard !path.isEmpty else { return RuleNodeCollection(nodes: []) }
-        if let nodes = input.node?.collectionNodes {
-            return RuleNodeCollection(nodes: try nodes.flatMap {
-                try selectNodes(xpath: path, input: RuleExecutionInput(node: $0), context: context).nodes
-            })
-        }
         let root = try xpathRoot(input)
         return try root.owner.withLock {
             var parser = XPathSubsetParser(path)
@@ -98,11 +87,23 @@ public struct XPathRuleSelectorExecutor: RuleSelectorExecutor {
     private func xpathRoot(
         _ input: RuleExecutionInput
     ) throws -> (owner: HTMLRuleNodeOwner, roots: [Element]) {
-        if let node = input.node {
-            guard case let .html(html) = node.storage else {
-                throw RuleExecutionError.unsupportedExecutionNode("XPath over a JSON node")
+        let structured = input.structuredNodes
+        if !structured.isEmpty {
+            let htmlNodes = try structured.map { node -> HTMLRuleNode in
+                guard case let .html(html) = node.storage else {
+                    throw RuleExecutionError.unsupportedExecutionNode("XPath over a JSON node")
+                }
+                return html
             }
-            return (html.owner, [html.element])
+            guard let first = htmlNodes.first,
+                  htmlNodes.allSatisfy({ $0.owner === first.owner }) else {
+                throw RuleExecutionError.unsupportedExecutionNode("XPath nodes from different documents")
+            }
+            return (first.owner, htmlNodes.map(\.element))
+        }
+        if input.nodes?.isEmpty == true {
+            let document = try SwiftSoup.parse("")
+            return (HTMLRuleNodeOwner(retaining: [document]), [])
         }
         let document = try SwiftSoup.parse(htmlInput(input.value))
         return (HTMLRuleNodeOwner(retaining: [document]), document.children().array())

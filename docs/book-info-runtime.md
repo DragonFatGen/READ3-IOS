@@ -1,153 +1,179 @@
-# Book-source BookInfo runtime
+# Book-source book-info runtime
 
 This analysis is pinned to Android Legado commit
-`c043ea72fd2698d27a7dcbc0beb7844c572e544c`. The gitlink under
-`Reference/READ3.0` was not initialized or modified; the commit was inspected in a
-detached system-temporary checkout.
+`c043ea72fd2698d27a7dcbc0beb7844c572e544c`. The reference tree was read only.
+The Swift implementation described below deliberately stops at a resolved `tocURL`.
 
 ## Android call chain and request boundary
 
-The production path is:
+The normal search-to-detail path is:
 
 ```text
-SearchBook.toBook() / an existing Book
-  -> WebBook.getBookInfoAwait(source, book, canReName)
-  -> if book.infoHtml is nonempty: parse it directly
-  -> otherwise AnalyzeUrl(book.bookUrl,
-                         baseUrl=source.bookSourceUrl,
-                         source headers, source, ruleData=book)
+SearchBook.toBook()
+  -> WebBook.getBookInfoAwait(source, book, canReName=true)
+  -> AnalyzeUrl(mUrl=book.bookUrl, baseUrl=source.bookSourceUrl,
+                source headers, source, ruleData=book)
   -> getStrResponseAwait()
   -> BookInfo.analyzeBookInfo(baseUrl=book.bookUrl,
-                             redirectUrl=response.url,
-                             body=response.body)
+                             redirectUrl=StrResponse.url,
+                             body=StrResponse.body)
   -> one AnalyzeRule(book, source)
-  -> setContent(body).setBaseUrl(book.bookUrl).setRedirectUrl(response.url)
+  -> setContent(body).setBaseUrl(book.bookUrl).setRedirectUrl(response URL)
   -> ruleBookInfo.init, then field rules
   -> mutate and return the same Book
 ```
 
-`bookUrl` normally comes from the selected search/explore result. Android also accepts an
-already-created `Book`, so the value need not originate in search. A nonempty transient
-`Book.infoHtml` bypasses networking and uses `bookUrl` as both base and redirect URL;
-otherwise BookInfo always requests `book.bookUrl`. `AnalyzeUrl` resolves that request
-against `bookSourceUrl`, applies source/login headers, URL options (including POST),
-cookies, retry/proxy metadata, and its normal response decoding. READ3-IOS reuses
-`RequestBuilder`, `HTTPClient`, and `TextDecoder`; login-check JavaScript, WebView, proxy
-execution, and unsupported encodings remain outside this phase.
+`bookUrl` originates in the selected `SearchBook` (normally the resolved
+`ruleSearch.bookUrl`) and is copied unchanged by `SearchBook.toBook`. Detail does not
+have a rule that replaces it. `AnalyzeUrl` accepts the complete Legado URL string, so
+detail URLs can carry URL options, including POST options. It resolves a relative
+request URL against `bookSourceUrl`, merges the source header and option headers, loads
+source-scoped cookies, and uses the normal retry/proxy/redirect request path.
 
-Android's OkHttp helper returns the final 4xx/5xx response after retries, so a non-null
-body still enters BookInfo parsing. A transport failure or null body fails the operation.
-The response URL is retained separately as `redirectUrl`; it is not substituted for the
-canonical `book.bookUrl` or the rule `baseUrl`.
+Detail normally requests `book.bookUrl`, but not unconditionally. If `Book.infoHtml` is
+nonempty, Android parses that body directly with both `baseUrl` and `redirectUrl` equal
+to `book.bookUrl`. `BookSearchResult` in Core has no cached HTML field, so the initial
+Swift public search-result API always performs the request; cached-body orchestration is
+not invented in this phase.
+
+OkHttp retries unsuccessful statuses and returns the last response. `StrResponse` uses
+the response body even for 4xx/5xx, or the status message when no body exists. BookInfo
+therefore still parses a 404/500 body. Transport failures escape. Decoding removes a
+UTF-8 BOM, then uses Content-Type charset, then Android detection. Swift delegates to
+`TextDecoder`; GBK/GB2312/GB18030/Big5 remain typed unsupported errors.
+
+`loginCheckJs` may replace the `StrResponse` after the request in Android. Login and
+WebView behavior are outside this phase.
 
 ## `ruleBookInfo.init`
 
-`init` is optional. Nil, empty, or whitespace-only means no initialization and every field
-starts from the complete response body. A nonblank value is executed exactly once through
-`AnalyzeRule.getElement`, then its raw result is passed to `AnalyzeRule.setContent`.
+`init` is optional. A null, empty, or whitespace-only value is skipped, leaving the
+entire response body as `AnalyzeRule.content`. Otherwise Android executes exactly:
 
-`getElement` supports the normal source-rule pipeline, including selector modes, regex
-element extraction, JavaScript, templates, `@put`, and replacement. Its selector results
-are structured:
-
-- historical JSoup/CSS returns the complete `Elements` collection;
-- JSONPath calls Jayway `getObject` and retains the returned map, list, scalar, or null;
-- XPath returns the complete `List<JXNode>`;
-- JavaScript retains its raw Rhino result until the next stage/API boundary.
-
-No collection element is selected by BookInfo. A null final result reaches `setContent`
-and throws Android's `AssertionError`; an empty but non-null collection is accepted and
-later fields see that empty context. The same `AnalyzeRule` instance is used for init and
-all fields, so `@put/@get` writes are shared. READ3-IOS represents both one node and a
-multi-root context with the existing `RuleNode`; it does not serialize HTML/XPath roots or
-JSON objects merely to feed later selectors.
-
-Android may stringify/reparse JSoup `Elements` or an XPath list internally when switching
-analyzer types. READ3-IOS deliberately retains equivalent roots directly for the supported
-selector engines. This removes repeated parsing while preserving relative field lookup.
-Direct structured-node-to-JavaScript remains explicitly unsupported because the current
-JavaScript boundary has no DOM/map binding.
-
-## Field order, input, and state
-
-The fixed execution order is:
-
-1. `name` via `getString`
-2. `author` via `getString`
-3. `kind` via `getStringList`, joined with `,`
-4. `wordCount` via `getString`
-5. `lastChapter` via `getString`
-6. `intro` via `getString`
-7. `coverUrl` via `getString`
-8. `tocUrl` via `getString(..., isUrl=true)`
-
-`updateTime` exists in `BookInfoRule` but is not read by this fixed BookInfo implementation.
-`canReName` is a control rule/value, not a parsed result field: when the caller permits
-renaming and the source value is nonblank, nonempty parsed name/author may replace values
-already carried from search. Otherwise name/author only fill an empty value.
-
-Every `getString`/`getStringList` invocation initializes its local `result` from the shared
-initialized content. The previous field result is not the next field input. A rule's own
-sequential stages update `result` normally. `@put/@get` storage does cross init and later
-fields because all calls use one `AnalyzeRule` backed by the same Book; capture/result state
-does not intentionally cross calls. READ3-IOS mirrors this with one fresh
-`RuleExecutionContext` per BookInfo operation, resets `currentResult` and capture groups for
-each field, and retains temporary variables across fields. Concurrent books therefore do
-not share node owners, base URLs, results, captures, or temporary variables.
-
-## Result mutation and normalization
-
-Android applies `BookHelp.formatBookName`, `BookHelp.formatBookAuthor`,
-`wordCountFormat`, and `HtmlFormatter.format` to name, author, word count, and intro.
-`kind` is the rule list joined by comma; it is not split by the runtime. `lastChapter` is
-display text only in this phase. Empty optional field results retain the values already
-present on the Book. Name and author may also retain search values as described above.
-There is no required-field exception for empty name, author, or toc URL.
-
-`coverUrl` is updated only for a nonempty parsed value and is resolved against
-`redirectUrl`. `tocUrl` is always assigned: `getString(isUrl=true)` resolves a nonblank
-value against `redirectUrl`, while a blank value returns `baseUrl` (`book.bookUrl`). When
-that final toc URL equals `book.bookUrl`, Android also caches the detail body as `tocHtml`;
-TOC fetching/parsing is outside this phase. `bookUrl` itself is never overwritten by a
-BookInfo rule and remains the canonical input value even after redirects.
-
-The URL completion path accepts absolute, root-relative, path-relative, parent-relative,
-scheme-relative, query-only, and fragment-only references. READ3-IOS uses the existing
-`URLResolver`. Arbitrary schemes are retained consistently with the current resolver;
-scheme security policy belongs at the later consumer boundary and full Android
-`NetworkUtils` parity is not claimed.
-
-## Error and capability policy
-
-Name, author, init, and toc rule exceptions escape Android and fail BookInfo. Kind, word
-count, last chapter, intro, and cover exceptions are caught, logged, and leave the prior
-field value unchanged. A valid selector with no match is an empty result, not an error.
-READ3-IOS exposes request-build, network, decoding, init, required-path field, optional
-field diagnostics, structured input, and JavaScript-network capability categories while
-preserving Android's optional-field continuation behavior.
-
-Pure JavaScript works when an executor is injected and its direct input is scalar.
-JavaScript directly receiving an HTML/JSON/XPath structured context fails with the existing
-unsupported-structured-input capability. `java.ajax/get/post/head` production transport
-remains **BLOCKED BY SYNC/ASYNC BOUNDARY** and returns an explicit capability error; it is
-never replaced with an empty, null, or mocked production value.
-
-## Swift runtime boundary
-
-`BookSourceBookInfoRuntime.fetchBookInfo(source:book:)` is the async orchestration API:
-
-```text
-BookSearchResult.bookURL
-  -> RequestBuilder (source header/cookies/options)
-  -> HTTPClient.send
-  -> HTTPResponse.text(TextDecoder)
-  -> optional RuleNode init context
-  -> ordered synchronous RuleExecutor field evaluation
-  -> BookInfoResult
+```kotlin
+analyzeRule.setContent(analyzeRule.getElement(infoRule.init))
 ```
 
-`BookInfoResult` keeps Legado URL/count values as strings and carries the search-derived
-name, author, book URL, cover, intro, kind, word count, latest chapter, and source identity.
-Parsed nonempty values update those fields according to Android's rules. `updateTime` is
-not invented because the fixed runtime does not consume it. An in-memory content overload
-is kept internal to tests/runtime orchestration rather than expanding the initial public API.
+It uses `AnalyzeRule.getElement`, not `getString` or `getElements`. `getElement` parses
+the rule with `allInOne=true`, runs every source-rule stage, executes `@put` before its
+stage, permits JavaScript, and preserves the returned object:
+
+- historical JSoup/CSS returns an `Elements` collection, including all matches;
+- JSONPath calls `getObject` and returns the selected map, list, or scalar without
+  stringification;
+- XPath calls `getElements` and returns its complete `List<JXNode>`;
+- all-in-one regex returns its element result;
+- JavaScript returns the raw Rhino result.
+
+There is no “take the first init match” step. A collection remains the context collection.
+`setContent` rejects null with an assertion, so a failed/null init aborts detail parsing.
+An empty but non-null collection is accepted and later selectors see an empty context.
+An empty JavaScript string is also accepted. The same `AnalyzeRule` instance is retained,
+its selector adapters are invalidated, and later fields start from that exact init object.
+HTML elements, JSON objects, and XPath element nodes are therefore relative roots rather
+than serialized response fragments.
+
+Swift reuses `RuleNode`, `RuleNodeCollection`, `RuleNodeExecutor`, and the existing
+selector adapter. It does not introduce a BookInfo-specific node family. Structured
+nodes are retained from init to every field; HTML and JSON are not converted to outer
+HTML/compact JSON and reparsed per field.
+
+## Field order, state, and result
+
+The fixed Android order is:
+
+1. name
+2. author
+3. kind
+4. wordCount
+5. lastChapter
+6. intro
+7. coverUrl
+8. tocUrl
+
+`updateTime` exists in `BookInfoRule` but is not read by this BookInfo implementation.
+`canReName` is not an extracted result field: it enables replacing a nonempty existing
+name/author when the caller also permits rename.
+
+One `AnalyzeRule` and the same book-backed variable store are used for init and every
+field. Consequently `@put/@get` writes are visible to later fields in the order above.
+Each `getString`/`getStringList` call independently initializes its local `result` from
+the current analyzer content (the init context, or the response root when init was
+skipped). The previous field's returned string is not the next field's input. JavaScript
+`result` is the object entering that JavaScript stage: initially the field's current
+content, or the scalar/node result of an earlier stage in the same rule.
+
+Each Swift fetch creates a fresh `RuleExecutionContext`; concurrent books do not share
+temporary variables, capture groups, current result, node ownership, or base URL. Core
+does not currently persist Android book variables, so only variables written during the
+one detail execution are shared across its fields.
+
+## Field behavior
+
+- `name`: `getString`, then Android book-name formatting. A nonempty value replaces the
+  existing name only when the existing name is empty or rename is enabled by both caller
+  and nonblank `canReName`. Rule errors propagate.
+- `author`: same policy using author formatting. Rule errors propagate.
+- `kind`: `getStringList`, joined with `,` without splitting an extracted scalar.
+  Errors are logged and the existing value is retained.
+- `wordCount`: `getString`, then `wordCountFormat`; it remains a string such as `123万字`.
+  Errors retain the existing value.
+- `lastChapter`: `getString`; it only updates display metadata and does not load TOC.
+  Errors retain the existing value.
+- `intro`: `getString`, then `HtmlFormatter.format`. Cleanup belongs to that established
+  Android formatter, not arbitrary runtime trimming. Errors retain the existing value.
+- `coverUrl`: `getString`; a nonempty value is completed against `redirectUrl`. Errors or
+  empty results retain the existing cover.
+- `tocUrl`: `getString(..., isUrl=true)`. A nonblank value is completed against
+  `redirectUrl`; blank resolves/falls back to the original `baseUrl` (`book.bookUrl`). If
+  the final TOC URL equals that original base URL, Android stores the response body in
+  `book.tocHtml` for the next stage. The Swift result stores the resolved URL only and
+  does not start TOC parsing.
+
+Name, author, and TOC are not guarded by per-field `try/catch`; invalid rules or
+JavaScript errors abort BookInfo. Optional kind/word-count/last-chapter/intro/cover
+errors are isolated and retain the search value. Empty name/author are allowed and
+retain their existing search values. Empty TOC is not an error; it falls back to the
+original book URL. There is no independent required-field validation.
+
+## URL bases
+
+Android intentionally keeps two URL concepts:
+
+- `AnalyzeRule.baseUrl` is always the incoming canonical `book.bookUrl`, even after a
+  redirect. It is visible to JavaScript and is the blank-TOC fallback.
+- `AnalyzeRule.redirectUrl` is `StrResponse.url` (the final network request URL). It is
+  used by `isUrl=true` and explicitly by cover completion.
+
+Thus a redirect changes relative `coverUrl`/`tocUrl` resolution but does not replace the
+result's `bookURL`. Absolute, root-relative, path-relative, parent-relative,
+scheme-relative, query, and fragment references follow the shared URL resolver. The
+Android helper accepts absolute non-HTTP schemes as strings; this phase does not add a
+new security policy beyond existing request and URL-resolution behavior.
+
+## Swift API and capability boundary
+
+The asynchronous orchestration API is:
+
+```swift
+BookSourceBookInfoRuntime.fetchBookInfo(source:book:) async throws -> BookInfoResult
+```
+
+It injects `HTTPClient`, `RequestBuilder`, `RuleNodeSelectorExecutor`, optional
+`RuleJavaScriptExecutor`, and `TextDecoder`. Request building, source headers, cookies,
+URL options, POST, retries, and proxy metadata stay in `RequestBuilder`; transport stays
+in `HTTPClient`; response decoding stays in `TextDecoder`; rule execution remains
+synchronous.
+
+`BookInfoResult` contains the observable detail/search state needed by the next stage:
+name, author, canonical book URL, resolved cover URL, intro, kind, word count, last
+chapter, resolved TOC URL, and source identity/order metadata. URLs remain strings for
+Legado compatibility. `updateTime`, cached HTML, UI state, persistence state, and chapter
+models are not added.
+
+Pure JavaScript works when the injected executor can consume the scalar input at that
+stage. JavaScript whose direct input is an HTML/JSON/XPath structured init context remains
+an explicit `unsupported structured JavaScript input` capability error; silently passing
+outer HTML or compact JSON would be false compatibility. `java.ajax/get/post/head` remain
+**BLOCKED BY SYNC/ASYNC BOUNDARY** and produce the dedicated unsupported-network-host
+error. No production bridge, WebView, `webJs`, login, TOC, or content runtime is added.

@@ -31,14 +31,30 @@ public enum RuleValue: Sendable, Equatable {
 public struct RuleExecutionInput: Sendable, Equatable {
     public let value: RuleValue
     public let node: RuleNode?
+    public let nodes: RuleNodeCollection?
 
     public init(_ value: RuleValue) {
         self.value = value
         node = nil
+        nodes = nil
     }
 
     public init(node: RuleNode) {
         value = .none
         self.node = node
+        nodes = nil
+    }
+
+    public init(nodes: RuleNodeCollection) {
+        value = .none
+        node = nil
+        self.nodes = nodes
+    }
+
+    public var hasStructuredValue: Bool { node != nil || nodes != nil }
+
+    var structuredNodes: [RuleNode] {
+        if let node { return [node] }
+        return nodes?.nodes ?? []
     }
 }

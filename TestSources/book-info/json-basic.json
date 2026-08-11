@@ -1,1 +1,1 @@
-{"name":"Book A","author":"AA","toc":"/toc/1","cover":"/cover/1.jpg","intro":"Intro","kind":["A","B"],"words":"12345","latest":"C10"}
+{"data":{"book":{"name":"Book A","author":"AA","intro":"Intro A","kind":["Fantasy","Swift"],"wordCount":"123万字","lastChapter":"Chapter 9","cover":"/cover/a.jpg","toc":"/toc/1"}}}

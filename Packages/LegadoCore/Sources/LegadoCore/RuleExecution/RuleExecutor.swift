@@ -42,7 +42,7 @@ public struct RuleExecutor: Sendable {
         case .javaScript(""):
             return .none
         case let .javaScript(script):
-            guard input.node == nil else {
+            guard !input.hasStructuredValue else {
                 throw RuleExecutionError.unsupportedExecutionNode("JavaScript structured input")
             }
             return try executeJavaScript(script, input: input, context: &context).ruleValue
@@ -97,7 +97,7 @@ public struct RuleExecutor: Sendable {
             case let .literal(value): result += value
             case .expression(.javaScript("")): break
             case let .expression(.javaScript(script)):
-                guard input.node == nil else {
+                guard !input.hasStructuredValue else {
                     throw RuleExecutionError.unsupportedExecutionNode("JavaScript structured input")
                 }
                 result += try executeJavaScript(script, input: input, context: &context).templateString
@@ -141,7 +141,7 @@ public struct RuleExecutor: Sendable {
                 }
                 return selector
             }
-            if input.node != nil {
+            if input.hasStructuredValue {
                 guard let nodeExecutor = selectorExecutor as? any RuleNodeSelectorExecutor else {
                     throw RuleExecutionError.unsupportedExecutionNode("structured historical selector child chain")
                 }
@@ -180,7 +180,7 @@ public struct RuleExecutor: Sendable {
         guard let selectorExecutor else {
             throw RuleExecutionError.unsupportedExecutionNode("selector")
         }
-        if input.node != nil {
+        if input.hasStructuredValue {
             guard let nodeExecutor = selectorExecutor as? any RuleNodeSelectorExecutor else {
                 throw RuleExecutionError.unsupportedExecutionNode("structured selector input")
             }
@@ -197,7 +197,7 @@ public struct RuleExecutor: Sendable {
         guard let selectorExecutor else {
             throw RuleExecutionError.unsupportedExecutionNode("JSONPath")
         }
-        if input.node != nil {
+        if input.hasStructuredValue {
             guard let nodeExecutor = selectorExecutor as? any RuleNodeSelectorExecutor else {
                 throw RuleExecutionError.unsupportedExecutionNode("structured JSONPath input")
             }
@@ -214,7 +214,7 @@ public struct RuleExecutor: Sendable {
         guard let selectorExecutor else {
             throw RuleExecutionError.unsupportedExecutionNode("XPath")
         }
-        if input.node != nil {
+        if input.hasStructuredValue {
             guard let nodeExecutor = selectorExecutor as? any RuleNodeSelectorExecutor else {
                 throw RuleExecutionError.unsupportedExecutionNode("structured XPath input")
             }
@@ -225,6 +225,9 @@ public struct RuleExecutor: Sendable {
 
     private func scalarValue(_ input: RuleExecutionInput) throws -> RuleValue {
         if let node = input.node { return .string(try node.scalarString()) }
+        if let nodes = input.nodes {
+            return .strings(try nodes.nodes.map { try $0.scalarString() })
+        }
         return input.value
     }
 

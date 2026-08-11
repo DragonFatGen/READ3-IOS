@@ -4,6 +4,17 @@ import SwiftSoup
 public struct JSoupRuleSelectorExecutor: RuleSelectorExecutor {
     public init() {}
 
+    public func makeRootContext(
+        input: RuleExecutionInput,
+        contentIsJSON: Bool,
+        context: RuleExecutionContext
+    ) throws -> RuleExecutionInput {
+        let root = try htmlRoots(input, parsingScalar: true)
+        return RuleExecutionInput(node: RuleNode(storage: .html(
+            HTMLRuleNode(owner: root.owner, element: root.elements[0])
+        )))
+    }
+
     public func execute(
         selector: SelectorRule,
         input: RuleValue,
@@ -15,10 +26,10 @@ public struct JSoupRuleSelectorExecutor: RuleSelectorExecutor {
             case .legado:
                 return try executeHistoricalChain(
                     [selector.value],
-                    document: document
+                    roots: [document]
                 )
             case .css:
-                return try executeExplicitCSS(selector.value, document: document)
+                return try executeExplicitCSS(selector.value, roots: [document])
             }
         } catch let error as RuleExecutionError {
             throw error
@@ -32,22 +43,17 @@ public struct JSoupRuleSelectorExecutor: RuleSelectorExecutor {
         input: RuleExecutionInput,
         context: RuleExecutionContext
     ) throws -> RuleValue {
-        if let nodes = input.node?.collectionNodes {
-            return merge(try nodes.map {
-                try execute(selector: selector, input: RuleExecutionInput(node: $0), context: context)
-            })
-        }
-        guard input.node != nil else {
+        guard input.hasStructuredValue else {
             return try execute(selector: selector, input: input.value, context: context)
         }
         do {
-            let root = try htmlRoot(input)
+            let root = try htmlRoots(input)
             return try root.owner.withLock {
                 switch selector.type {
                 case .legado:
-                    return try executeHistoricalChain([selector.value], document: root.element)
+                    return try executeHistoricalChain([selector.value], roots: root.elements)
                 case .css:
-                    return try executeExplicitCSS(selector.value, document: root.element)
+                    return try executeExplicitCSS(selector.value, roots: root.elements)
                 }
             }
         } catch let error as RuleExecutionError {
@@ -67,7 +73,7 @@ public struct JSoupRuleSelectorExecutor: RuleSelectorExecutor {
         }
         do {
             let document = try SwiftSoup.parse(htmlInput(input))
-            return try executeHistoricalChain(childChain.map(\.value), document: document)
+            return try executeHistoricalChain(childChain.map(\.value), roots: [document])
         } catch let error as RuleExecutionError {
             throw error
         } catch {
@@ -80,20 +86,15 @@ public struct JSoupRuleSelectorExecutor: RuleSelectorExecutor {
         input: RuleExecutionInput,
         context: RuleExecutionContext
     ) throws -> RuleValue {
-        if let nodes = input.node?.collectionNodes {
-            return merge(try nodes.map {
-                try execute(childChain: childChain, input: RuleExecutionInput(node: $0), context: context)
-            })
-        }
-        guard input.node != nil else {
+        guard input.hasStructuredValue else {
             return try execute(childChain: childChain, input: input.value, context: context)
         }
         guard childChain.allSatisfy({ $0.type == .legado }) else {
             throw RuleExecutionError.selectorExecutionFailed("A historical child chain contains a non-historical selector.")
         }
-        let root = try htmlRoot(input)
+        let root = try htmlRoots(input)
         return try root.owner.withLock {
-            try executeHistoricalChain(childChain.map(\.value), document: root.element)
+            try executeHistoricalChain(childChain.map(\.value), roots: root.elements)
         }
     }
 
@@ -102,21 +103,20 @@ public struct JSoupRuleSelectorExecutor: RuleSelectorExecutor {
         input: RuleExecutionInput,
         context: RuleExecutionContext
     ) throws -> RuleNodeCollection {
-        if let nodes = input.node?.collectionNodes {
-            return RuleNodeCollection(nodes: try nodes.flatMap {
-                try selectNodes(selector: selector, input: RuleExecutionInput(node: $0), context: context).nodes
-            })
-        }
-        let root = try htmlRoot(input, parsingScalar: true)
+        let root = try htmlRoots(input, parsingScalar: true)
         return try root.owner.withLock {
-            let elements: Elements
+            var selected: [Element] = []
             switch selector.type {
             case .legado:
-                elements = try selectHistorical(selector.value, from: root.element)
+                for element in root.elements {
+                    selected.append(contentsOf: try selectHistorical(selector.value, from: element).array())
+                }
             case .css:
-                elements = try root.element.select(selector.value)
+                for element in root.elements {
+                    selected.append(contentsOf: try element.select(selector.value).array())
+                }
             }
-            return RuleNodeCollection(nodes: elements.array().map {
+            return RuleNodeCollection(nodes: selected.map {
                 RuleNode(storage: .html(HTMLRuleNode(owner: root.owner, element: $0)))
             })
         }
@@ -127,17 +127,12 @@ public struct JSoupRuleSelectorExecutor: RuleSelectorExecutor {
         input: RuleExecutionInput,
         context: RuleExecutionContext
     ) throws -> RuleNodeCollection {
-        if let nodes = input.node?.collectionNodes {
-            return RuleNodeCollection(nodes: try nodes.flatMap {
-                try selectNodes(childChain: childChain, input: RuleExecutionInput(node: $0), context: context).nodes
-            })
-        }
         guard childChain.allSatisfy({ $0.type == .legado }) else {
             throw RuleExecutionError.selectorExecutionFailed("A historical child chain contains a non-historical selector.")
         }
-        let root = try htmlRoot(input, parsingScalar: true)
+        let root = try htmlRoots(input, parsingScalar: true)
         return try root.owner.withLock {
-            var elements = Elements([root.element])
+            var elements = Elements(root.elements)
             for selector in childChain {
                 var next: [Element] = []
                 for element in elements {
@@ -169,10 +164,10 @@ public struct JSoupRuleSelectorExecutor: RuleSelectorExecutor {
 
     private func executeHistoricalChain(
         _ chain: [String],
-        document: Element
+        roots: [Element]
     ) throws -> RuleValue {
         guard let extraction = chain.last else { return .none }
-        var elements = Elements([document])
+        var elements = Elements(roots)
         for selection in chain.dropLast() {
             var next: [Element] = []
             for parent in elements {
@@ -183,7 +178,7 @@ public struct JSoupRuleSelectorExecutor: RuleSelectorExecutor {
         return try extract(extraction, from: elements)
     }
 
-    private func executeExplicitCSS(_ rule: String, document: Element) throws -> RuleValue {
+    private func executeExplicitCSS(_ rule: String, roots: [Element]) throws -> RuleValue {
         guard let delimiter = rule.lastIndex(of: "@") else {
             // Android's string extractor requires a final @ extraction field. Keeping
             // this explicit avoids silently treating a CSS query as historical syntax.
@@ -191,7 +186,11 @@ public struct JSoupRuleSelectorExecutor: RuleSelectorExecutor {
         }
         let query = String(rule[..<delimiter])
         let extraction = String(rule[rule.index(after: delimiter)...])
-        return try extract(extraction, from: document.select(query))
+        var selected: [Element] = []
+        for root in roots {
+            selected.append(contentsOf: try root.select(query).array())
+        }
+        return try extract(extraction, from: Elements(selected))
     }
 
     private func selectHistorical(_ rawRule: String, from element: Element) throws -> Elements {
@@ -271,11 +270,6 @@ public struct JSoupRuleSelectorExecutor: RuleSelectorExecutor {
         values.isEmpty ? .none : .strings(values)
     }
 
-    private func merge(_ values: [RuleValue]) -> RuleValue {
-        let strings = values.flatMap(\.stringValues)
-        return strings.isEmpty ? .none : .strings(strings)
-    }
-
     private func htmlInput(_ input: RuleValue) -> String {
         switch input {
         case .none: ""
@@ -284,21 +278,37 @@ public struct JSoupRuleSelectorExecutor: RuleSelectorExecutor {
         }
     }
 
-    private func htmlRoot(
+    private func htmlRoots(
         _ input: RuleExecutionInput,
         parsingScalar: Bool = false
-    ) throws -> HTMLRuleNode {
-        if let node = input.node {
-            guard case let .html(html) = node.storage else {
+    ) throws -> (owner: HTMLRuleNodeOwner, elements: [Element]) {
+        let structured = input.structuredNodes
+        if !structured.isEmpty {
+            let htmlNodes = try structured.map { node -> HTMLRuleNode in
+                guard case let .html(html) = node.storage else {
+                    throw RuleExecutionError.unsupportedExecutionNode("JSoup over a JSON node")
+                }
+                return html
+            }
+            guard let first = htmlNodes.first,
+                  htmlNodes.allSatisfy({ $0.owner === first.owner }) else {
+                throw RuleExecutionError.unsupportedExecutionNode("JSoup nodes from different documents")
+            }
+            return (first.owner, htmlNodes.map(\.element))
+        }
+        if input.hasStructuredValue {
+            if input.nodes?.isEmpty == true {
+                let document = try SwiftSoup.parse("")
+                return (HTMLRuleNodeOwner(retaining: [document]), [])
+            } else {
                 throw RuleExecutionError.unsupportedExecutionNode("JSoup over a JSON node")
             }
-            return html
         }
         guard parsingScalar else {
             throw RuleExecutionError.selectorExecutionFailed("Missing HTML node input.")
         }
         let document = try SwiftSoup.parse(htmlInput(input.value))
-        return HTMLRuleNode(owner: HTMLRuleNodeOwner(retaining: [document]), element: document)
+        return (HTMLRuleNodeOwner(retaining: [document]), [document])
     }
 
     private func trimAndroidWhitespace(_ value: String) -> String {

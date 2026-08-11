@@ -92,3 +92,21 @@ no static mutable node cache.
 
 The main retained cost is one parsed HTML or JSON graph per active response, instead of
 `book count × field count` reparses. XPath over HTML shares the same graph.
+
+## Book-info init contexts
+
+BookInfo reuses the same node types. `RuleExecutionInput` can now carry a
+`RuleNodeCollection` because Android `AnalyzeRule.getElement(ruleBookInfo.init)` retains
+all JSoup/XPath matches rather than selecting the first one. JSoup and XPath field
+execution accepts those nodes as multiple roots while requiring a common owner, so one
+response graph cannot be accidentally mixed with another concurrent response.
+
+JSONPath init uses a distinct object-selection boundary: an object or array remains one
+JSON `RuleNode` instead of being flattened with book-list `getElements` semantics. A
+missing/null init still fails at the initialization boundary. With no init, the response
+is parsed once into an HTML or JSON root node and every detail field reuses it.
+
+A leading JavaScript init stage still receives the original response string, matching
+Android. If it returns a string, that new content is parsed once for subsequent fields.
+JavaScript directly receiving an already structured init node remains explicitly
+unsupported until a safe DOM/map binding exists.

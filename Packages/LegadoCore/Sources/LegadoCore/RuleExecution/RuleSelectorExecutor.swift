@@ -28,6 +28,12 @@ public extension RuleSelectorExecutor {
 /// Optional structured-node capability used by runtime orchestration. Existing scalar
 /// selector executors and test fakes do not need to implement it.
 public protocol RuleNodeSelectorExecutor: RuleSelectorExecutor {
+    func makeRootContext(
+        input: RuleExecutionInput,
+        contentIsJSON: Bool,
+        context: RuleExecutionContext
+    ) throws -> RuleExecutionInput
+
     func execute(
         selector: SelectorRule,
         input: RuleExecutionInput,
@@ -58,29 +64,23 @@ public protocol RuleNodeSelectorExecutor: RuleSelectorExecutor {
     func selectNodes(jsonPath: String, input: RuleExecutionInput, context: RuleExecutionContext) throws -> RuleNodeCollection
     func selectNodes(xpath: String, input: RuleExecutionInput, context: RuleExecutionContext) throws -> RuleNodeCollection
 
-    func selectContextNode(
-        selector: SelectorRule,
-        input: RuleExecutionInput,
-        context: RuleExecutionContext
-    ) throws -> RuleNode?
-    func selectContextNode(jsonPath: String, input: RuleExecutionInput, context: RuleExecutionContext) throws -> RuleNode?
-    func selectContextNode(xpath: String, input: RuleExecutionInput, context: RuleExecutionContext) throws -> RuleNode?
+    func selectContext(jsonPath: String, input: RuleExecutionInput, context: RuleExecutionContext) throws -> RuleExecutionInput
 }
 
 public extension RuleNodeSelectorExecutor {
-    func selectContextNode(
-        selector: SelectorRule,
+    func makeRootContext(
+        input: RuleExecutionInput,
+        contentIsJSON: Bool,
+        context: RuleExecutionContext
+    ) throws -> RuleExecutionInput {
+        throw RuleExecutionError.unsupportedExecutionNode("structured root context")
+    }
+
+    func selectContext(
+        jsonPath: String,
         input: RuleExecutionInput,
         context: RuleExecutionContext
-    ) throws -> RuleNode? {
-        RuleNode.context(try selectNodes(selector: selector, input: input, context: context).nodes)
-    }
-
-    func selectContextNode(jsonPath: String, input: RuleExecutionInput, context: RuleExecutionContext) throws -> RuleNode? {
-        RuleNode.context(try selectNodes(jsonPath: jsonPath, input: input, context: context).nodes)
-    }
-
-    func selectContextNode(xpath: String, input: RuleExecutionInput, context: RuleExecutionContext) throws -> RuleNode? {
-        RuleNode.context(try selectNodes(xpath: xpath, input: input, context: context).nodes)
+    ) throws -> RuleExecutionInput {
+        RuleExecutionInput(nodes: try selectNodes(jsonPath: jsonPath, input: input, context: context))
     }
 }

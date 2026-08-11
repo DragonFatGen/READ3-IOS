@@ -1,1 +1,1 @@
-{"data":{"book":{"name":"Book A","author":"AA","toc":"/toc/1"},"recommend":{"name":"Other"}}}
+{"data":{"book":{"name":"Book A","author":"AA","toc":"/toc/1"},"recommend":{"name":"Other","author":"Wrong","toc":"/toc/other"}}}

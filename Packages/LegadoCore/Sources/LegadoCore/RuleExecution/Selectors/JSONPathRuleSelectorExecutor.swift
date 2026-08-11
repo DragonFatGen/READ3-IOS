@@ -5,6 +5,14 @@ import Foundation
 public struct JSONPathRuleSelectorExecutor: RuleSelectorExecutor {
     public init() {}
 
+    public func makeRootContext(
+        input: RuleExecutionInput,
+        contentIsJSON: Bool,
+        context: RuleExecutionContext
+    ) throws -> RuleExecutionInput {
+        RuleExecutionInput(node: RuleNode(storage: .json(try decode(input))))
+    }
+
     public func execute(selector: SelectorRule, input: RuleValue, context: RuleExecutionContext) throws -> RuleValue {
         throw RuleExecutionError.unsupportedExecutionNode("selector")
     }
@@ -32,12 +40,6 @@ public struct JSONPathRuleSelectorExecutor: RuleSelectorExecutor {
         input: RuleExecutionInput,
         context: RuleExecutionContext
     ) throws -> RuleValue {
-        if let nodes = input.node?.collectionNodes {
-            let values = try nodes.flatMap {
-                try execute(jsonPath: path, input: RuleExecutionInput(node: $0), context: context).stringValues
-            }
-            return values.isEmpty ? .none : .strings(values)
-        }
         do {
             let root = try decode(input)
             let values = try evaluate(path, root: root)
@@ -78,21 +80,20 @@ public struct JSONPathRuleSelectorExecutor: RuleSelectorExecutor {
         }
     }
 
-    public func selectContextNode(
+    public func selectContext(
         jsonPath path: String,
         input: RuleExecutionInput,
         context: RuleExecutionContext
-    ) throws -> RuleNode? {
+    ) throws -> RuleExecutionInput {
         do {
             let values = try evaluate(path, root: decode(input))
-            guard !values.isEmpty else { return nil }
+            guard !values.isEmpty else { throw RuleExecutionError.pathNotFound(path) }
             let value: JSONValue = values.count == 1 ? values[0] : .array(values)
-            return RuleNode(storage: .json(value))
+            return RuleExecutionInput(node: RuleNode(storage: .json(value)))
         } catch let error as RuleExecutionError {
-            if context.errorPolicy == .legadoCompatible { return nil }
+            if context.errorPolicy == .legadoCompatible { throw error }
             throw error
         } catch {
-            if context.errorPolicy == .legadoCompatible { return nil }
             throw RuleExecutionError.invalidJSONPath(path)
         }
     }
@@ -124,6 +125,15 @@ public struct JSONPathRuleSelectorExecutor: RuleSelectorExecutor {
                 throw RuleExecutionError.unsupportedExecutionNode("JSONPath over an HTML node")
             }
             return value
+        }
+        if let nodes = input.nodes {
+            let values = try nodes.nodes.map { node -> JSONValue in
+                guard case let .json(value) = node.storage else {
+                    throw RuleExecutionError.unsupportedExecutionNode("JSONPath over an HTML node")
+                }
+                return value
+            }
+            return .array(values)
         }
         return try decode(input.value)
     }

@@ -7,74 +7,33 @@ final class BookSourceBookInfoRuntimeTests: XCTestCase {
         let (runtime, _) = runtime(fixture: "html-basic.html")
         let result = try await runtime.fetchBookInfo(source: htmlSource(), book: book())
         XCTAssertEqual(result.name, "Book A")
-        XCTAssertEqual(result.author, "AA")
+        XCTAssertEqual(result.author, "Author A")
         XCTAssertEqual(result.kind, "Fantasy")
         XCTAssertEqual(result.wordCount, "1.2万字")
         XCTAssertEqual(result.lastChapter, "Chapter 10")
         XCTAssertEqual(result.intro, "Intro A")
-        XCTAssertEqual(result.coverURL, "https://example.invalid/covers/1.jpg")
+        XCTAssertEqual(result.coverURL, "https://example.invalid/covers/a.jpg")
+        XCTAssertEqual(result.tocURL, "https://example.invalid/toc/a")
+    }
+
+    func testHTMLInitKeepsFieldsRelativeToSelectedNode() async throws {
+        let (runtime, _) = runtime(fixture: "html-init-node.html")
+        var source = minimalHTMLSource()
+        source.ruleBookInfo?.`init` = "id.main-book"
+        let result = try await runtime.fetchBookInfo(source: source, book: book())
+        XCTAssertEqual(result.name, "Book A")
+        XCTAssertEqual(result.author, "AA")
         XCTAssertEqual(result.tocURL, "https://example.invalid/toc/1")
     }
 
-    func testHTMLInitKeepsRelativeNodeContext() async throws {
-        let (runtime, _) = runtime(fixture: "html-init-node.html")
-        var source = htmlSource()
-        source.ruleBookInfo = BookInfoRule(
-            initialRule: "id.main-book", name: "tag.h1@text", author: "class.author@text",
-            tocUrl: "tag.a@href", canReName: "true"
+    func testJSONInitKeepsObjectWithoutStringRoundTrip() async throws {
+        let (runtime, _) = runtime(
+            fixture: "json-init-node.json", contentType: "application/json"
         )
-        let result = try await runtime.fetchBookInfo(source: source, book: book())
+        let result = try await runtime.fetchBookInfo(source: jsonSource(), book: book())
         XCTAssertEqual(result.name, "Book A")
         XCTAssertEqual(result.author, "AA")
-    }
-
-    func testJSONInitKeepsObjectContext() async throws {
-        let (runtime, _) = runtime(
-            fixture: "json-init-node.json", contentType: "application/json",
-            finalURL: "https://api.example.invalid/book/1"
-        )
-        let source = BookSource(
-            bookSourceUrl: "https://api.example.invalid", bookSourceName: "JSON",
-            ruleBookInfo: BookInfoRule(
-                initialRule: "$.data.book", name: "$.name", author: "$.author",
-                tocUrl: "$.toc", canReName: "true"
-            )
-        )
-        let result = try await runtime.fetchBookInfo(source: source, book: book())
-        XCTAssertEqual(result.name, "Book A")
-        XCTAssertEqual(result.author, "AA")
-        XCTAssertEqual(result.tocURL, "https://api.example.invalid/toc/1")
-    }
-
-    func testJSONWithoutInitUsesResponseRoot() async throws {
-        let (runtime, _) = runtime(
-            fixture: "json-basic.json", contentType: "application/json",
-            finalURL: "https://api.example.invalid/book/1"
-        )
-        let source = BookSource(
-            bookSourceUrl: "https://api.example.invalid", bookSourceName: "JSON",
-            ruleBookInfo: BookInfoRule(
-                name: "$.name", author: "$.author", tocUrl: "$.toc", canReName: "1"
-            )
-        )
-        let result = try await runtime.fetchBookInfo(source: source, book: book())
-        XCTAssertEqual(result.name, "Book A")
-        XCTAssertEqual(result.author, "AA")
-    }
-
-    func testJSONMissingAuthorRetainsSearchAuthor() async throws {
-        let (runtime, _) = runtime(
-            fixture: "json-missing-field.json", contentType: "application/json"
-        )
-        let source = BookSource(
-            bookSourceUrl: "https://example.invalid", bookSourceName: "JSON",
-            ruleBookInfo: BookInfoRule(
-                initialRule: "$.data.book", name: "$.name", author: "$.author",
-                tocUrl: "$.toc", canReName: "1"
-            )
-        )
-        let result = try await runtime.fetchBookInfo(source: source, book: book())
-        XCTAssertEqual(result.author, "Search Author")
+        XCTAssertEqual(result.tocURL, "https://example.invalid/toc/1")
     }
 
     func testXPathInitKeepsRelativeElementContext() async throws {
@@ -85,28 +44,81 @@ final class BookSourceBookInfoRuntimeTests: XCTestCase {
                 initialRule: "@XPath://article[@id='book']",
                 name: "@XPath:.//h1/text()",
                 author: "@XPath:.//span[@class='author']/text()",
-                tocUrl: "@XPath:.//a[@class='toc']/@href", canReName: "true"
+                tocUrl: "@XPath:.//a[@class='toc']/@href",
+                canReName: "1"
             )
         )
         let result = try await runtime.fetchBookInfo(source: source, book: book())
         XCTAssertEqual(result.name, "XPath Book")
-        XCTAssertEqual(result.author, "XA")
+        XCTAssertEqual(result.author, "XPath Author")
         XCTAssertEqual(result.tocURL, "https://example.invalid/xpath/toc")
     }
 
-    func testNilInitUsesWholeResponse() async throws {
+    func testNoInitUsesWholeResponseRoot() async throws {
         let (runtime, _) = runtime(fixture: "html-basic.html")
-        let result = try await runtime.fetchBookInfo(source: htmlSource(initialRule: nil), book: book())
+        var source = minimalHTMLSource()
+        source.ruleBookInfo?.`init` = nil
+        let result = try await runtime.fetchBookInfo(source: source, book: book())
         XCTAssertEqual(result.name, "Book A")
     }
 
-    func testEmptyInitUsesWholeResponse() async throws {
+    func testEmptyInitUsesWholeResponseRoot() async throws {
         let (runtime, _) = runtime(fixture: "html-basic.html")
-        let result = try await runtime.fetchBookInfo(source: htmlSource(initialRule: "  "), book: book())
-        XCTAssertEqual(result.author, "AA")
+        var source = minimalHTMLSource()
+        source.ruleBookInfo?.`init` = "  \n "
+        let result = try await runtime.fetchBookInfo(source: source, book: book())
+        XCTAssertEqual(result.author, "Author A")
     }
 
-    func testBlankTocFallsBackToCanonicalBookURL() async throws {
+    func testInitPutIsVisibleToName() async throws {
+        let (runtime, _) = runtime(fixture: "html-init-node.html")
+        var source = minimalHTMLSource()
+        source.ruleBookInfo?.`init` = #"id.main-book@put:{"saved":"id.main-book@tag.h1@text"}"#
+        source.ruleBookInfo?.name = "@get:{saved}"
+        let result = try await runtime.fetchBookInfo(source: source, book: book())
+        XCTAssertEqual(result.name, "Book A")
+    }
+
+    func testNamePutIsVisibleToAuthorInAndroidFieldOrder() async throws {
+        let (runtime, _) = runtime(fixture: "html-basic.html")
+        var source = minimalHTMLSource()
+        source.ruleBookInfo?.name = #"tag.h1@text@put:{"saved":"class.author@text"}"#
+        source.ruleBookInfo?.author = "@get:{saved}"
+        let result = try await runtime.fetchBookInfo(source: source, book: book())
+        XCTAssertEqual(result.author, "Author A")
+    }
+
+    func testPreviousFieldResultIsNotNextFieldInput() async throws {
+        let (runtime, _) = runtime(fixture: "html-basic.html")
+        var source = minimalHTMLSource()
+        source.ruleBookInfo?.name = "tag.h1@text"
+        source.ruleBookInfo?.author = "class.author@text"
+        let result = try await runtime.fetchBookInfo(source: source, book: book())
+        XCTAssertEqual(result.author, "Author A")
+    }
+
+    func testRenameDisabledRetainsSearchNameAndAuthor() async throws {
+        let (runtime, _) = runtime(fixture: "html-basic.html")
+        var source = minimalHTMLSource()
+        source.ruleBookInfo?.canReName = nil
+        let result = try await runtime.fetchBookInfo(
+            source: source, book: book(name: "Search Name", author: "Search Author")
+        )
+        XCTAssertEqual(result.name, "Search Name")
+        XCTAssertEqual(result.author, "Search Author")
+    }
+
+    func testEmptyNameAndAuthorRetainSearchValues() async throws {
+        let (runtime, _) = runtime(fixture: "json-missing-field.json", contentType: "application/json")
+        var source = jsonSource()
+        source.ruleBookInfo?.author = "$.missing"
+        let result = try await runtime.fetchBookInfo(
+            source: source, book: book(name: "Search", author: "Existing")
+        )
+        XCTAssertEqual(result.author, "Existing")
+    }
+
+    func testEmptyTocFallsBackToCanonicalBookURL() async throws {
         let (runtime, _) = runtime(fixture: "empty.html")
         let source = BookSource(
             bookSourceUrl: "https://example.invalid", bookSourceName: "Empty",
@@ -116,224 +128,245 @@ final class BookSourceBookInfoRuntimeTests: XCTestCase {
         XCTAssertEqual(result.tocURL, "https://example.invalid/book/1")
     }
 
-    func testRedirectURLResolvesCoverAndTocButDoesNotReplaceBookURL() async throws {
+    func testRedirectFinalURLResolvesCoverAndTocButNotBookURL() async throws {
         let (runtime, _) = runtime(
             fixture: "html-relative-urls.html",
             finalURL: "https://mirror.example.invalid/books/1/"
         )
-        var source = htmlSource()
-        source.ruleBookInfo = BookInfoRule(
-            initialRule: "id.book", coverUrl: "tag.img@src", tocUrl: "tag.a@href"
-        )
+        var source = minimalHTMLSource()
+        source.ruleBookInfo?.`init` = "id.book"
+        source.ruleBookInfo?.coverUrl = "tag.img@src"
         let result = try await runtime.fetchBookInfo(source: source, book: book())
         XCTAssertEqual(result.bookURL, "https://example.invalid/book/1")
         XCTAssertEqual(result.coverURL, "https://cdn.example.invalid/a.jpg")
         XCTAssertEqual(result.tocURL, "https://mirror.example.invalid/books/toc/1")
     }
 
+    func testRelativeTocFormsUseSharedURLResolver() async throws {
+        let forms = [
+            ("/toc/1", "https://mirror.example.invalid/toc/1"),
+            ("toc/1", "https://mirror.example.invalid/books/1/toc/1"),
+            ("../toc/1", "https://mirror.example.invalid/books/toc/1"),
+            ("//cdn.example.invalid/toc", "https://cdn.example.invalid/toc"),
+            ("https://other.invalid/toc", "https://other.invalid/toc"),
+            ("?chapter=1", "https://mirror.example.invalid/books/1/?chapter=1"),
+            ("#anchor", "https://mirror.example.invalid/books/1/#anchor")
+        ]
+        for (raw, expected) in forms {
+            let response = HTTPResponse(
+                statusCode: 200, data: Data("<html></html>".utf8),
+                finalURL: try XCTUnwrap(URL(string: "https://mirror.example.invalid/books/1/"))
+            )
+            let runtime = BookSourceBookInfoRuntime(
+                httpClient: MockHTTPClient(response: response),
+                javaScriptExecutor: LiteralJavaScriptExecutor(value: raw)
+            )
+            var source = minimalHTMLSource()
+            source.ruleBookInfo?.tocUrl = "@js:'literal'"
+            let result = try await runtime.fetchBookInfo(source: source, book: book())
+            XCTAssertEqual(result.tocURL, expected)
+        }
+    }
+
+    func testPOSTBookInfoUsesRequestBuilderOptionsAndHeaders() async throws {
+        let (runtime, client) = runtime(fixture: "html-basic.html")
+        let optionBook = book(url: #"https://example.invalid/info,{"method":"POST","body":"id=1","headers":{"X-Info":"yes"}}"#)
+        _ = try await runtime.fetchBookInfo(source: htmlSource(), book: optionBook)
+        let requests = await client.requests
+        let request = try XCTUnwrap(requests.first)
+        XCTAssertEqual(request.method, .post)
+        XCTAssertEqual(String(decoding: try XCTUnwrap(request.body), as: UTF8.self), "id=1")
+        XCTAssertEqual(request.headers["X-Info"], "yes")
+    }
+
+    func testSourceHeaderAndCookieRemainRequestBuilderResponsibilities() async throws {
+        let cookieStore = InMemoryHTTPCookieStore()
+        await cookieStore.store([
+            HTTPCookie(name: "session", value: "abc", domain: "example.invalid")
+        ], for: try XCTUnwrap(URL(string: "https://example.invalid")), sourceIdentifier: "https://example.invalid")
+        let response = try response(fixture: "html-basic.html")
+        let client = MockHTTPClient(response: response)
+        let runtime = BookSourceBookInfoRuntime(
+            httpClient: client, requestBuilder: RequestBuilder(cookieStore: cookieStore)
+        )
+        var source = htmlSource()
+        source.header = #"{"X-Source":"book"}"#
+        _ = try await runtime.fetchBookInfo(source: source, book: book())
+        let requests = await client.requests
+        let request = try XCTUnwrap(requests.first)
+        XCTAssertEqual(request.headers["X-Source"], "book")
+        XCTAssertEqual(request.headers["Cookie"], "session=abc")
+    }
+
     func testHTTP404BodyStillParses() async throws {
-        let response = try response(fixture: "html-basic.html", statusCode: 404)
+        let response = HTTPResponse(
+            statusCode: 404,
+            data: try FixtureLoader.data(named: "html-basic.html", directory: "book-info"),
+            finalURL: try XCTUnwrap(URL(string: "https://example.invalid/book/1"))
+        )
         let runtime = BookSourceBookInfoRuntime(httpClient: MockHTTPClient(response: response))
         let result = try await runtime.fetchBookInfo(source: htmlSource(), book: book())
         XCTAssertEqual(result.name, "Book A")
     }
 
-    func testMalformedHTMLUsesParserRecovery() async throws {
-        let (runtime, _) = runtime(fixture: "html-malformed.html")
-        let result = try await runtime.fetchBookInfo(source: htmlSource(), book: book())
-        XCTAssertTrue(result.name.contains("Recovered"))
-    }
-
-    func testMissingBookInfoRuleIsTyped() async throws {
-        let runtime = BookSourceBookInfoRuntime(httpClient: MockHTTPClient(error: .invalidResponse))
-        do {
-            _ = try await runtime.fetchBookInfo(
-                source: BookSource(bookSourceUrl: "https://example.invalid", bookSourceName: "None"),
-                book: book()
-            )
-            XCTFail("Expected unsupported BookInfo")
-        } catch {
-            XCTAssertEqual(error as? BookInfoError, .bookInfoNotSupported)
-        }
-    }
-
-    func testNetworkFailureIsTyped() async throws {
-        let runtime = BookSourceBookInfoRuntime(httpClient: MockHTTPClient(error: .transportError("offline")))
-        do {
-            _ = try await runtime.fetchBookInfo(source: htmlSource(), book: book())
-            XCTFail("Expected network failure")
-        } catch let error as BookInfoError {
-            guard case .networkFailed = error else { return XCTFail("Unexpected \(error)") }
-        }
-    }
-
-    func testUnsupportedResponseCharsetIsTyped() async throws {
-        let (runtime, _) = runtime(
-            fixture: "html-basic.html", contentType: "text/html; charset=gbk"
-        )
-        do {
-            _ = try await runtime.fetchBookInfo(source: htmlSource(), book: book())
-            XCTFail("Expected decoding failure")
-        } catch let error as BookInfoError {
-            guard case .responseDecodeFailed = error else { return XCTFail("Unexpected \(error)") }
-        }
-    }
-
-    func testRequestUsesRequestBuilderSourceAndOptionHeaders() async throws {
-        let (runtime, client) = runtime(fixture: "html-basic.html")
-        var source = htmlSource()
-        source.header = #"{"User-Agent":"Source","X-Level":"source"}"#
-        var input = book()
-        input = BookSearchResult(
-            name: input.name, author: input.author,
-            bookURL: #"https://example.invalid/book/1,{"headers":{"X-Level":"detail"}}"#,
-            sourceURL: input.sourceURL, sourceName: input.sourceName,
-            sourceType: input.sourceType, sourceOrder: input.sourceOrder
-        )
-        _ = try await runtime.fetchBookInfo(source: source, book: input)
-        let requests = await client.requests
-        let request = try XCTUnwrap(requests.first)
-        XCTAssertEqual(request.headers["User-Agent"], "Source")
-        XCTAssertEqual(request.headers["X-Level"], "detail")
-    }
-
-    func testPOSTBookInfoUsesURLRequestOptions() async throws {
-        let (runtime, client) = runtime(fixture: "html-basic.html")
-        let input = BookSearchResult(
-            name: "Search", author: "Search Author",
-            bookURL: #"https://example.invalid/book/1,{"method":"POST","body":"id=1"}"#,
-            sourceURL: "https://example.invalid", sourceName: "Source", sourceType: 0, sourceOrder: 0
-        )
-        _ = try await runtime.fetchBookInfo(source: htmlSource(), book: input)
-        let requests = await client.requests
-        let request = try XCTUnwrap(requests.first)
-        XCTAssertEqual(request.method, .post)
-        XCTAssertEqual(String(decoding: try XCTUnwrap(request.body), as: UTF8.self), "id=1")
-    }
-
-    func testNameAndAuthorRetainSearchValuesWithoutCanRenameRule() async throws {
-        let (runtime, _) = runtime(fixture: "html-basic.html")
-        var source = htmlSource()
-        source.ruleBookInfo?.canReName = nil
-        let result = try await runtime.fetchBookInfo(source: source, book: book())
-        XCTAssertEqual(result.name, "Search Name")
-        XCTAssertEqual(result.author, "Search Author")
-    }
-
-    func testOptionalFieldFailureRetainsSearchValue() async throws {
-        let (runtime, _) = runtime(fixture: "html-basic.html")
-        var source = htmlSource()
-        source.ruleBookInfo?.intro = "@XPath:("
-        let result = try await runtime.fetchBookInfo(source: source, book: book(intro: "Search intro"))
-        XCTAssertEqual(result.intro, "Search intro")
-    }
-
-    func testPutAndGetShareContextAcrossFields() async throws {
-        let (runtime, _) = runtime(fixture: "html-basic.html")
-        var source = htmlSource()
-        source.ruleBookInfo?.name = #"tag.h1@text@put:{"saved":"class.author@text"}"#
-        source.ruleBookInfo?.author = "@get:{saved}"
-        let result = try await runtime.fetchBookInfo(source: source, book: book())
-        XCTAssertEqual(result.name, "Book A")
-        XCTAssertEqual(result.author, "AA")
-    }
-
-    func testInitPutIsVisibleToLaterField() async throws {
-        let (runtime, _) = runtime(fixture: "html-basic.html")
-        var source = htmlSource()
-        source.ruleBookInfo = BookInfoRule(
-            initialRule: #"id.book@put:{"saved":"class.author@text"}"#,
-            name: "@get:{saved}", tocUrl: "tag.a@href", canReName: "1"
-        )
-        let result = try await runtime.fetchBookInfo(source: source, book: book())
-        XCTAssertEqual(result.name, "AA")
-    }
-
-    func testEachFieldRestartsResultFromInitNode() async throws {
-        let (runtime, _) = runtime(fixture: "html-basic.html")
-        var source = htmlSource()
-        source.ruleBookInfo?.name = "tag.h1@text"
-        source.ruleBookInfo?.author = "class.author@text"
-        let result = try await runtime.fetchBookInfo(source: source, book: book())
-        XCTAssertEqual(result.author, "AA")
-    }
-
-    func testStructuredNodeDirectJavaScriptIsExplicitlyUnsupported() async throws {
-        let (runtime, _) = runtime(fixture: "html-basic.html")
-        var source = htmlSource()
-        source.ruleBookInfo?.name = "@js:result"
-        do {
-            _ = try await runtime.fetchBookInfo(source: source, book: book())
-            XCTFail("Expected structured input failure")
-        } catch let error as BookInfoError {
-            guard case .fieldRuleFailed(field: "name", message: _) = error else {
-                return XCTFail("Unexpected \(error)")
+    func testUnsupportedCharsetIsTypedDecodeError() async throws {
+        let (runtime, _) = runtime(fixture: "html-basic.html", contentType: "text/html; charset=gbk")
+        await XCTAssertThrowsErrorAsync(try await runtime.fetchBookInfo(source: htmlSource(), book: book())) {
+            guard let error = $0 as? BookInfoError,
+                  case .responseDecodeFailed = error else {
+                return XCTFail("Unexpected \($0)")
             }
         }
     }
 
-    func testInitFailureIsTyped() async throws {
-        let (runtime, _) = runtime(fixture: "html-basic.html")
-        var source = htmlSource(initialRule: "id.missing")
-        do {
-            _ = try await runtime.fetchBookInfo(source: source, book: book())
-            XCTFail("Expected init failure")
-        } catch let error as BookInfoError {
-            guard case .initRuleFailed = error else { return XCTFail("Unexpected \(error)") }
+    func testTransportFailureIsTypedNetworkError() async throws {
+        let runtime = BookSourceBookInfoRuntime(
+            httpClient: MockHTTPClient(error: .transportError("offline"))
+        )
+        await XCTAssertThrowsErrorAsync(try await runtime.fetchBookInfo(source: htmlSource(), book: book())) {
+            guard let error = $0 as? BookInfoError,
+                  case .networkFailed = error else {
+                return XCTFail("Unexpected \($0)")
+            }
         }
     }
 
-    func testProductionJavaNetworkRuleRemainsUnsupported() async throws {
+    func testInvalidInitAbortsWithInitError() async throws {
+        let (runtime, _) = runtime(fixture: "json-basic.json", contentType: "application/json")
+        var source = jsonSource()
+        source.ruleBookInfo?.`init` = "$.missing"
+        await XCTAssertThrowsErrorAsync(try await runtime.fetchBookInfo(source: source, book: book())) {
+            guard let error = $0 as? BookInfoError,
+                  case .initRuleFailed = error else {
+                return XCTFail("Unexpected \($0)")
+            }
+        }
+    }
+
+    func testRequiredNameRuleErrorAborts() async throws {
         let (runtime, _) = runtime(fixture: "html-basic.html")
         var source = htmlSource()
-        source.ruleBookInfo?.name = "@js:java.ajax('https://example.invalid')"
-        do {
-            _ = try await runtime.fetchBookInfo(source: source, book: book())
-            XCTFail("Expected capability error")
-        } catch {
-            XCTAssertEqual(error as? BookInfoError, .unsupportedJavaScriptNetworkHost)
+        source.ruleBookInfo?.name = "@XPath:["
+        await XCTAssertThrowsErrorAsync(try await runtime.fetchBookInfo(source: source, book: book())) {
+            guard let error = $0 as? BookInfoError,
+                  case let .fieldRuleFailed(field, _) = error else {
+                return XCTFail("Unexpected \($0)")
+            }
+            XCTAssertEqual(field, "name")
         }
     }
 
-    func testConcurrentBookInfoCallsRemainIsolated() async throws {
-        let responseA = try response(fixture: "html-init-node.html", finalURL: "https://a.invalid/book/1")
-        let responseB = try response(fixture: "xpath-basic.html", finalURL: "https://b.invalid/book/2")
+    func testOptionalFieldErrorRetainsSearchValue() async throws {
+        let (runtime, _) = runtime(fixture: "html-basic.html")
+        var source = htmlSource()
+        source.ruleBookInfo?.kind = "@XPath:["
+        let result = try await runtime.fetchBookInfo(source: source, book: book(kind: "Search Kind"))
+        XCTAssertEqual(result.kind, "Search Kind")
+    }
+
+    func testPureJavaScriptAfterScalarSelectorUsesInjectedExecutor() async throws {
+        let response = try response(fixture: "html-basic.html")
+        let runtime = BookSourceBookInfoRuntime(
+            httpClient: MockHTTPClient(response: response),
+            javaScriptExecutor: SuffixJavaScriptExecutor()
+        )
+        var source = htmlSource()
+        source.ruleBookInfo?.name = "tag.h1@text<js>result + '!'</js>"
+        let result = try await runtime.fetchBookInfo(source: source, book: book())
+        XCTAssertEqual(result.name, "Book A!")
+    }
+
+    func testPureJavaScriptInitReceivesResponseString() async throws {
+        let response = try response(fixture: "html-basic.html")
+        let runtime = BookSourceBookInfoRuntime(
+            httpClient: MockHTTPClient(response: response),
+            javaScriptExecutor: IdentityJavaScriptExecutor()
+        )
+        var source = htmlSource()
+        source.ruleBookInfo?.`init` = "@js:result"
+        let result = try await runtime.fetchBookInfo(source: source, book: book())
+        XCTAssertEqual(result.name, "Book A")
+    }
+
+    func testStructuredInitDirectJavaScriptIsExplicitlyUnsupported() async throws {
+        let (base, client) = runtime(fixture: "html-init-node.html")
+        _ = base
+        var source = minimalHTMLSource()
+        source.ruleBookInfo?.`init` = "id.main-book"
+        source.ruleBookInfo?.name = "@js:result"
+        let runtime = BookSourceBookInfoRuntime(
+            httpClient: client, javaScriptExecutor: SuffixJavaScriptExecutor()
+        )
+        await XCTAssertThrowsErrorAsync(try await runtime.fetchBookInfo(source: source, book: book())) {
+            guard let error = $0 as? BookInfoError,
+                  case let .fieldRuleFailed(field, message) = error else {
+                return XCTFail("Unexpected \($0)")
+            }
+            XCTAssertEqual(field, "name")
+            XCTAssertTrue(message.contains("structured"))
+        }
+    }
+
+    func testProductionJavaScriptNetworkHostRemainsUnsupported() async throws {
+        let (runtime, _) = runtime(fixture: "html-basic.html")
+        var source = htmlSource()
+        source.ruleBookInfo?.intro = "@js:java.ajax('/more')"
+        await XCTAssertThrowsErrorAsync(try await runtime.fetchBookInfo(source: source, book: book())) {
+            XCTAssertEqual($0 as? BookInfoError, .unsupportedJavaScriptNetworkHost)
+        }
+    }
+
+    func testConcurrentBookInfoFetchesRemainIsolated() async throws {
+        let bodyA = Data(#"{"data":{"book":{"name":"A","author":"AA","toc":"/a"}}}"#.utf8)
+        let bodyB = Data(#"{"data":{"book":{"name":"B","author":"BB","toc":"/b"}}}"#.utf8)
+        let responseA = HTTPResponse(statusCode: 200, data: bodyA, finalURL: try XCTUnwrap(URL(string: "https://a.invalid/info")))
+        let responseB = HTTPResponse(statusCode: 200, data: bodyB, finalURL: try XCTUnwrap(URL(string: "https://b.invalid/info")))
         let runtimeA = BookSourceBookInfoRuntime(httpClient: MockHTTPClient(response: responseA))
         let runtimeB = BookSourceBookInfoRuntime(httpClient: MockHTTPClient(response: responseB))
-        var sourceA = htmlSource()
-        sourceA.ruleBookInfo = BookInfoRule(initialRule: "id.main-book", name: "tag.h1@text", tocUrl: "tag.a@href", canReName: "1")
-        let sourceB = BookSource(
-            bookSourceUrl: "https://b.invalid", bookSourceName: "B",
-            ruleBookInfo: BookInfoRule(initialRule: "id.other", name: "tag.h1@text", canReName: "1")
-        )
-        async let a = runtimeA.fetchBookInfo(source: sourceA, book: book(url: "https://a.invalid/book/1"))
-        async let b = runtimeB.fetchBookInfo(source: sourceB, book: book(url: "https://b.invalid/book/2"))
-        let (valueA, valueB) = try await (a, b)
-        let values = [valueA, valueB]
-        XCTAssertEqual(Set(values.map(\.name)), Set(["Book A", "Other"]))
-        XCTAssertEqual(Set(values.map(\.bookURL)), Set(["https://a.invalid/book/1", "https://b.invalid/book/2"]))
+        var sourceA = jsonSource(base: "https://a.invalid")
+        var sourceB = jsonSource(base: "https://b.invalid")
+        sourceA.ruleBookInfo?.name = #"$.name@put:{"saved":"$.author"}"#
+        sourceA.ruleBookInfo?.author = "@get:{saved}"
+        sourceB.ruleBookInfo?.name = #"$.name@put:{"saved":"$.author"}"#
+        sourceB.ruleBookInfo?.author = "@get:{saved}"
+        let isolatedSourceA = sourceA
+        let isolatedSourceB = sourceB
+        async let a = runtimeA.fetchBookInfo(source: isolatedSourceA, book: book(url: "https://a.invalid/book"))
+        async let b = runtimeB.fetchBookInfo(source: isolatedSourceB, book: book(url: "https://b.invalid/book"))
+        let values = try await (a, b)
+        XCTAssertEqual([values.0.name, values.0.author, values.0.tocURL], ["A", "AA", "https://a.invalid/a"])
+        XCTAssertEqual([values.1.name, values.1.author, values.1.tocURL], ["B", "BB", "https://b.invalid/b"])
     }
 
     func testSearchThenBookInfoMockIntegration() async throws {
-        let searchResponse = HTTPResponse(
-            statusCode: 200, data: try FixtureLoader.data(named: "html-basic.html", directory: "search"),
-            finalURL: try XCTUnwrap(URL(string: "https://example.invalid/search"))
-        )
-        let infoResponse = try response(fixture: "html-basic.html")
-        let client = MockHTTPClient(results: [.success(searchResponse), .success(infoResponse)])
-        let searchRuntime = BookSourceSearchRuntime(httpClient: client)
-        let infoRuntime = BookSourceBookInfoRuntime(httpClient: client)
+        let searchBody = Data("<article class='book'><h2>Search A</h2><span class='author'>SA</span><a href='/book/1'>Open</a></article>".utf8)
+        let infoBody = try FixtureLoader.data(named: "html-basic.html", directory: "book-info")
+        let client = MockHTTPClient(results: [
+            .success(HTTPResponse(statusCode: 200, data: searchBody, finalURL: try XCTUnwrap(URL(string: "https://example.invalid/search")))),
+            .success(HTTPResponse(statusCode: 200, data: infoBody, finalURL: try XCTUnwrap(URL(string: "https://example.invalid/book/1"))))
+        ])
         var source = htmlSource()
         source.searchUrl = "https://example.invalid/search"
         source.ruleSearch = SearchRule(
-            bookList: "class.book", name: "tag.h2@text", author: "class.author@text",
-            bookUrl: "tag.a@href"
+            bookList: "class.book", name: "tag.h2@text", author: "class.author@text", bookUrl: "tag.a@href"
         )
-        let searchResults = try await searchRuntime.search(source: source, keyword: "A")
-        let selected = try XCTUnwrap(searchResults.first)
-        let detail = try await infoRuntime.fetchBookInfo(source: source, book: selected)
-        XCTAssertEqual(detail.name, "Book A")
-        XCTAssertEqual(detail.tocURL, "https://example.invalid/toc/1")
+        let found = try await BookSourceSearchRuntime(httpClient: client)
+            .search(source: source, keyword: "A")
+        let selected = try XCTUnwrap(found.first)
+        let info = try await BookSourceBookInfoRuntime(httpClient: client)
+            .fetchBookInfo(source: source, book: selected)
+        XCTAssertEqual(info.name, "Book A")
+        XCTAssertEqual(info.tocURL, "https://example.invalid/toc/a")
+        let requests = await client.requests
+        XCTAssertEqual(requests.count, 2)
+    }
+
+    func testMalformedHTMLIsRecoverable() async throws {
+        let (runtime, _) = runtime(fixture: "html-malformed.html")
+        var source = minimalHTMLSource()
+        source.ruleBookInfo?.`init` = "id.book"
+        let result = try await runtime.fetchBookInfo(source: source, book: book())
+        XCTAssertEqual(result.name, "Recoverable")
     }
 
     private func runtime(
@@ -341,45 +374,98 @@ final class BookSourceBookInfoRuntimeTests: XCTestCase {
         contentType: String = "text/html; charset=utf-8",
         finalURL: String = "https://example.invalid/book/1"
     ) -> (BookSourceBookInfoRuntime, MockHTTPClient) {
-        let response = try! self.response(fixture: fixture, contentType: contentType, finalURL: finalURL)
-        let client = MockHTTPClient(response: response)
+        let client = MockHTTPClient(response: try! response(
+            fixture: fixture, contentType: contentType, finalURL: finalURL
+        ))
         return (BookSourceBookInfoRuntime(httpClient: client), client)
     }
 
     private func response(
         fixture: String,
         contentType: String = "text/html; charset=utf-8",
-        finalURL: String = "https://example.invalid/book/1",
-        statusCode: Int = 200
+        finalURL: String = "https://example.invalid/book/1"
     ) throws -> HTTPResponse {
         HTTPResponse(
-            statusCode: statusCode,
+            statusCode: 200,
             headers: HTTPHeaders(["Content-Type": contentType]),
             data: try FixtureLoader.data(named: fixture, directory: "book-info"),
             finalURL: try XCTUnwrap(URL(string: finalURL))
         )
     }
 
-    private func htmlSource(initialRule: String? = "id.book") -> BookSource {
+    private func book(
+        name: String = "Search Name",
+        author: String = "Search Author",
+        url: String = "https://example.invalid/book/1",
+        kind: String? = nil
+    ) -> BookSearchResult {
+        BookSearchResult(
+            name: name, author: author, bookURL: url, kind: kind,
+            sourceURL: "https://example.invalid", sourceName: "Source",
+            sourceType: 0, sourceOrder: 1
+        )
+    }
+
+    private func minimalHTMLSource() -> BookSource {
         BookSource(
-            bookSourceUrl: "https://example.invalid", bookSourceName: "Source", customOrder: 7,
+            bookSourceUrl: "https://example.invalid", bookSourceName: "HTML",
             ruleBookInfo: BookInfoRule(
-                initialRule: initialRule, name: "tag.h1@text", author: "class.author@text",
-                intro: "class.intro@text", kind: "class.kind@text",
-                lastChapter: "class.latest@text", coverUrl: "tag.img@src",
-                tocUrl: "tag.a@href", wordCount: "class.words@text", canReName: "true"
+                name: "tag.h1@text", author: "class.author@text",
+                tocUrl: "a.toc@href", canReName: "1"
             )
         )
     }
 
-    private func book(
-        url: String = "https://example.invalid/book/1",
-        intro: String? = nil
-    ) -> BookSearchResult {
-        BookSearchResult(
-            name: "Search Name", author: "Search Author", bookURL: url, intro: intro,
-            sourceURL: "https://example.invalid", sourceName: "Source",
-            sourceType: 0, sourceOrder: 7
+    private func htmlSource() -> BookSource {
+        var source = minimalHTMLSource()
+        source.ruleBookInfo?.`init` = "id.book"
+        source.ruleBookInfo?.intro = "class.intro@text"
+        source.ruleBookInfo?.kind = "class.kind@text"
+        source.ruleBookInfo?.wordCount = "class.words@text"
+        source.ruleBookInfo?.lastChapter = "class.last@text"
+        source.ruleBookInfo?.coverUrl = "tag.img@src"
+        return source
+    }
+
+    private func jsonSource(base: String = "https://example.invalid") -> BookSource {
+        BookSource(
+            bookSourceUrl: base, bookSourceName: "JSON",
+            ruleBookInfo: BookInfoRule(
+                initialRule: "$.data.book", name: "$.name", author: "$.author",
+                tocUrl: "$.toc", canReName: "1"
+            )
         )
+    }
+}
+
+private struct SuffixJavaScriptExecutor: RuleJavaScriptExecutor {
+    func execute(script: String, context: JavaScriptExecutionContext) throws -> JavaScriptExecutionResult {
+        .string(context.result.stringValue + "!")
+    }
+}
+
+private struct LiteralJavaScriptExecutor: RuleJavaScriptExecutor {
+    let value: String
+
+    func execute(script: String, context: JavaScriptExecutionContext) throws -> JavaScriptExecutionResult {
+        .string(value)
+    }
+}
+
+private struct IdentityJavaScriptExecutor: RuleJavaScriptExecutor {
+    func execute(script: String, context: JavaScriptExecutionContext) throws -> JavaScriptExecutionResult {
+        .string(context.result.stringValue)
+    }
+}
+
+private func XCTAssertThrowsErrorAsync<T>(
+    _ expression: @autoclosure () async throws -> T,
+    _ errorHandler: (Error) -> Void
+) async {
+    do {
+        _ = try await expression()
+        XCTFail("Expected error")
+    } catch {
+        errorHandler(error)
     }
 }

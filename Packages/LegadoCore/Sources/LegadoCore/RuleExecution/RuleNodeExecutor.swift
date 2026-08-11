@@ -1,8 +1,13 @@
 public struct RuleNodeExecutor: Sendable {
     private let selectorExecutor: any RuleNodeSelectorExecutor
+    private let javaScriptExecutor: (any RuleJavaScriptExecutor)?
 
-    public init(selectorExecutor: any RuleNodeSelectorExecutor) {
+    public init(
+        selectorExecutor: any RuleNodeSelectorExecutor,
+        javaScriptExecutor: (any RuleJavaScriptExecutor)? = nil
+    ) {
         self.selectorExecutor = selectorExecutor
+        self.javaScriptExecutor = javaScriptExecutor
     }
 
     public func execute(
@@ -13,24 +18,53 @@ public struct RuleNodeExecutor: Sendable {
         try evaluate(expression, input: input, context: &context)
     }
 
-    /// Executes Android's `getElement` result shape without flattening JSON arrays
-    /// or discarding HTML/XPath roots.
+    /// Creates the parsed response context once so several field rules can share it.
+    public func makeRootContext(
+        input: RuleExecutionInput,
+        contentIsJSON: Bool,
+        context: inout RuleExecutionContext
+    ) throws -> RuleExecutionInput {
+        try selectorExecutor.makeRootContext(
+            input: input,
+            contentIsJSON: contentIsJSON,
+            context: context
+        )
+    }
+
+    /// Mirrors AnalyzeRule.getElement: selectors retain nodes, JSONPath retains the
+    /// selected object/array/scalar, and scalar-only stages remain scalar.
     public func executeContext(
         _ expression: RuleExpression,
         input: RuleExecutionInput,
         context: inout RuleExecutionContext
-    ) throws -> RuleNode? {
+    ) throws -> RuleExecutionInput {
         switch expression {
         case .empty:
-            return nil
+            return input
         case let .selector(rule):
-            return try selectorExecutor.selectContextNode(selector: rule, input: input, context: context)
+            return RuleExecutionInput(nodes: try selectorExecutor.selectNodes(
+                selector: rule, input: input, context: context
+            ))
         case let .jsonPath(path):
-            return try selectorExecutor.selectContextNode(jsonPath: path, input: input, context: context)
+            return try selectorExecutor.selectContext(jsonPath: path, input: input, context: context)
         case let .xpath(path):
-            return try selectorExecutor.selectContextNode(xpath: path, input: input, context: context)
+            return RuleExecutionInput(nodes: try selectorExecutor.selectNodes(
+                xpath: path, input: input, context: context
+            ))
+        case .combination:
+            return RuleExecutionInput(nodes: try evaluate(expression, input: input, context: &context))
+        case let .sequence(expressions):
+            var result = input
+            for stage in expressions {
+                if result.value == .none, !result.hasStructuredValue { break }
+                result = try executeContext(stage, input: result, context: &context)
+            }
+            return result
         case let .variableWrite(assignments, body):
-            let scalarExecutor = RuleExecutor(selectorExecutor: selectorExecutor)
+            let scalarExecutor = RuleExecutor(
+                selectorExecutor: selectorExecutor,
+                javaScriptExecutor: javaScriptExecutor
+            )
             for assignment in assignments {
                 let value = try scalarExecutor.execute(
                     assignment.value,
@@ -39,17 +73,18 @@ public struct RuleNodeExecutor: Sendable {
                 ).value
                 context.setTemporaryVariable(value.stringValue, named: assignment.key)
             }
+            if case .empty = body { return input }
             return try executeContext(body, input: input, context: &context)
-        case let .combination(operation, branches):
-            return RuleNode.context(
-                try evaluate(
-                    .combination(operation, branches),
-                    input: input,
-                    context: &context
-                ).nodes
-            )
         default:
-            throw RuleExecutionError.unsupportedExecutionNode("structured element expression")
+            let value = try RuleExecutor(
+                selectorExecutor: selectorExecutor,
+                javaScriptExecutor: javaScriptExecutor
+            ).execute(
+                expression,
+                input: input,
+                context: &context
+            ).value
+            return RuleExecutionInput(value)
         }
     }
 

@@ -5,6 +5,17 @@ public struct LegadoRuleSelectorExecutor: RuleNodeSelectorExecutor {
 
     public init() {}
 
+    public func makeRootContext(
+        input: RuleExecutionInput,
+        contentIsJSON: Bool,
+        context: RuleExecutionContext
+    ) throws -> RuleExecutionInput {
+        if contentIsJSON {
+            return try jsonPath.makeRootContext(input: input, contentIsJSON: true, context: context)
+        }
+        return try jsoup.makeRootContext(input: input, contentIsJSON: false, context: context)
+    }
+
     public func execute(selector: SelectorRule, input: RuleValue, context: RuleExecutionContext) throws -> RuleValue {
         try jsoup.execute(selector: selector, input: input, context: context)
     }
@@ -53,19 +64,7 @@ public struct LegadoRuleSelectorExecutor: RuleNodeSelectorExecutor {
         try xpath.selectNodes(xpath: path, input: input, context: context)
     }
 
-    public func selectContextNode(
-        selector: SelectorRule,
-        input: RuleExecutionInput,
-        context: RuleExecutionContext
-    ) throws -> RuleNode? {
-        try jsoup.selectContextNode(selector: selector, input: input, context: context)
-    }
-
-    public func selectContextNode(jsonPath path: String, input: RuleExecutionInput, context: RuleExecutionContext) throws -> RuleNode? {
-        try jsonPath.selectContextNode(jsonPath: path, input: input, context: context)
-    }
-
-    public func selectContextNode(xpath path: String, input: RuleExecutionInput, context: RuleExecutionContext) throws -> RuleNode? {
-        try xpath.selectContextNode(xpath: path, input: input, context: context)
+    public func selectContext(jsonPath path: String, input: RuleExecutionInput, context: RuleExecutionContext) throws -> RuleExecutionInput {
+        try jsonPath.selectContext(jsonPath: path, input: input, context: context)
     }
 }
