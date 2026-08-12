@@ -458,15 +458,22 @@ final class BookSourceContentRuntimeTests: XCTestCase {
             "<span id='prefix'>B</span><div id='content'>Body B</div>",
             finalURL: "https://b.invalid/chapter"
         ))
-        async let a = runtime(clientA).fetchContent(
+        let runtimeA = runtime(clientA)
+        let runtimeB = runtime(clientB)
+        let bookA = book(tocURL: "https://a.invalid/toc")
+        let bookB = book(tocURL: "https://b.invalid/toc")
+        let chapterA = chapter(url: "https://a.invalid/chapter")
+        let chapterB = chapter(url: "https://b.invalid/chapter")
+
+        async let a = runtimeA.fetchContent(
             source: value,
-            book: book(tocURL: "https://a.invalid/toc"),
-            chapter: chapter(url: "https://a.invalid/chapter")
+            book: bookA,
+            chapter: chapterA
         )
-        async let b = runtime(clientB).fetchContent(
+        async let b = runtimeB.fetchContent(
             source: value,
-            book: book(tocURL: "https://b.invalid/toc"),
-            chapter: chapter(url: "https://b.invalid/chapter")
+            book: bookB,
+            chapter: chapterB
         )
         let results = try await (a, b)
         XCTAssertEqual(results.0.content, "A")
