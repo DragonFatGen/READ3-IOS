@@ -163,6 +163,11 @@ enum PlatformTextCodec {
         #if os(Windows)
         return try? decodeWindows(data, codePage: encoding.windowsCodePage, charset: charset)
         #else
+        #if canImport(Darwin)
+        if let coreFoundationEncoding = darwinCoreFoundationEncoding(for: encoding.kind) {
+            return decodeDarwin(data, encoding: coreFoundationEncoding)
+        }
+        #endif
         return String(data: data, encoding: foundationEncoding(for: encoding))
         #endif
     }
@@ -194,6 +199,39 @@ enum PlatformTextCodec {
     }
 
     #if !os(Windows)
+    #if canImport(Darwin)
+    private static func darwinCoreFoundationEncoding(
+        for kind: ChineseEncodingKind
+    ) -> CFStringEncoding? {
+        switch kind {
+        case .gb2312:
+            return CFStringEncoding(CFStringEncodings.GB_2312_80.rawValue)
+        case .gbk:
+            return CFStringEncoding(CFStringEncodings.GBK_95.rawValue)
+        case .gb18030, .big5:
+            return nil
+        }
+    }
+
+    private static func decodeDarwin(
+        _ data: Data,
+        encoding: CFStringEncoding
+    ) -> String? {
+        guard !data.isEmpty else { return "" }
+        return data.withUnsafeBytes { bytes in
+            guard let source = bytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
+                  let decoded = CFStringCreateWithBytes(
+                    kCFAllocatorDefault,
+                    source,
+                    bytes.count,
+                    encoding,
+                    false
+                  ) else { return nil }
+            return decoded as String
+        }
+    }
+    #endif
+
     private static func foundationEncoding(for encoding: ChineseEncoding) -> String.Encoding {
         #if canImport(CoreFoundation)
         let cocoaEncoding = CFStringConvertEncodingToNSStringEncoding(

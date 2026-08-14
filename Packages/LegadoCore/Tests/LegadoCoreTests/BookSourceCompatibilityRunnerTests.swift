@@ -84,7 +84,7 @@ final class BookSourceCompatibilityRunnerTests: XCTestCase {
     func testSelectorFailureCategory() async throws {
         let json = try replacing(
             #""bookList": "class.book""#,
-            with: #""bookList": "@CSS:h1""#
+            with: #""bookList": "@CSS:h1@text""#
         )
         let report = await BookSourceCompatibilityRunner(
             httpClient: MockHTTPClient(response: try fixtureResponse("search.html", url: "https://fixture.invalid/search"))

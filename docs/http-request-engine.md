@@ -125,8 +125,9 @@ separate from response decoding.
 
 `FoundationTextDecoder` supports UTF-8, UTF-16 variants, ASCII, ISO-8859-1,
 GBK, GB2312, GB18030, and Big5. Windows uses the corresponding system code
-pages; Darwin converts CoreFoundation external-encoding identifiers to
-Foundation encodings and decodes contiguous valid byte runs. HTML `<meta charset>` and
+pages; Darwin decodes GB2312/GBK directly through CoreFoundation and uses
+Foundation encodings for the remaining supported charsets. All Chinese codecs
+receive contiguous valid byte runs. HTML `<meta charset>` and
 legacy meta Content-Type declarations are detected in the first 16 KiB. ICU
 statistical byte detection remains deferred. As with Android's
 `String(bytes, Charset)`, malformed Chinese byte sequences decode with U+FFFD;

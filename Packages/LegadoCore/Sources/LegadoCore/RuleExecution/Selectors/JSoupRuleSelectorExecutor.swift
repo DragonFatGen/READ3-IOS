@@ -103,22 +103,28 @@ public struct JSoupRuleSelectorExecutor: RuleSelectorExecutor {
         input: RuleExecutionInput,
         context: RuleExecutionContext
     ) throws -> RuleNodeCollection {
-        let root = try htmlRoots(input, parsingScalar: true)
-        return try root.owner.withLock {
-            var selected: [Element] = []
-            switch selector.type {
-            case .legado:
-                for element in root.elements {
-                    selected.append(contentsOf: try selectHistorical(selector.value, from: element).array())
+        do {
+            let root = try htmlRoots(input, parsingScalar: true)
+            return try root.owner.withLock {
+                var selected: [Element] = []
+                switch selector.type {
+                case .legado:
+                    for element in root.elements {
+                        selected.append(contentsOf: try selectHistorical(selector.value, from: element).array())
+                    }
+                case .css:
+                    for element in root.elements {
+                        selected.append(contentsOf: try element.select(selector.value).array())
+                    }
                 }
-            case .css:
-                for element in root.elements {
-                    selected.append(contentsOf: try element.select(selector.value).array())
-                }
+                return RuleNodeCollection(nodes: selected.map {
+                    RuleNode(storage: .html(HTMLRuleNode(owner: root.owner, element: $0)))
+                })
             }
-            return RuleNodeCollection(nodes: selected.map {
-                RuleNode(storage: .html(HTMLRuleNode(owner: root.owner, element: $0)))
-            })
+        } catch let error as RuleExecutionError {
+            throw error
+        } catch {
+            throw RuleExecutionError.selectorExecutionFailed(String(describing: error))
         }
     }
 
