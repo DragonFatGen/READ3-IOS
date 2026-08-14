@@ -42,9 +42,14 @@ public struct RequestBuildContext: Equatable, Sendable {
 
 public struct RequestBuilder: Sendable {
     private let cookieStore: (any HTTPCookieStore)?
+    private let textEncoder: any TextEncoder
 
-    public init(cookieStore: (any HTTPCookieStore)? = nil) {
+    public init(
+        cookieStore: (any HTTPCookieStore)? = nil,
+        textEncoder: any TextEncoder = FoundationTextEncoder()
+    ) {
         self.cookieStore = cookieStore
+        self.textEncoder = textEncoder
     }
 
     public func build(
@@ -311,18 +316,17 @@ public struct RequestBuilder: Sendable {
         if headers["Content-Type"] == nil {
             headers["Content-Type"] = "application/json; charset=UTF-8"
         }
-        return (Data(body.utf8), .raw)
+        let bodyCharset = contentTypeCharset(headers["Content-Type"]) ?? "UTF-8"
+        return (try textEncoder.encode(body, charset: bodyCharset), .raw)
     }
 
     private func formEncoded(_ body: String, charset: String?) throws -> String {
-        if let charset,
-           !["utf-8", "utf8"].contains(charset.lowercased()) {
-            throw HTTPError.unsupportedCharset(charset)
-        }
-        return body.split(separator: "&", omittingEmptySubsequences: true).map { field in
+        return try body.split(separator: "&", omittingEmptySubsequences: true).map { field in
             let pieces = field.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
-            let name = percentEncode(String(pieces[0]))
-            let value = pieces.count == 2 ? percentEncode(String(pieces[1])) : ""
+            let name = try percentEncode(String(pieces[0]), charset: "UTF-8")
+            let value = pieces.count == 2
+                ? try percentEncode(String(pieces[1]), charset: charset)
+                : ""
             return "\(name)=\(value)"
         }.joined(separator: "&")
     }
@@ -343,14 +347,12 @@ public struct RequestBuilder: Sendable {
         guard !rawQuery.isEmpty else {
             return resolveURL(trimmed, baseURL: baseURL)
         }
-        if let charset,
-           !["utf-8", "utf8"].contains(charset.lowercased()) {
-            throw HTTPError.unsupportedCharset(charset)
-        }
-        let encodedQuery = rawQuery.split(separator: "&", omittingEmptySubsequences: true).map { field in
+        let encodedQuery = try rawQuery.split(separator: "&", omittingEmptySubsequences: true).map { field in
             let pieces = field.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false)
-            let name = encodeQueryComponent(String(pieces[0]))
-            let value = pieces.count == 2 ? encodeQueryComponent(String(pieces[1])) : ""
+            let name = try encodeQueryComponent(String(pieces[0]), charset: nil)
+            let value = pieces.count == 2
+                ? try encodeQueryComponent(String(pieces[1]), charset: charset)
+                : ""
             return "\(name)=\(value)"
         }.joined(separator: "&")
         let prefix = trimmed[..<queryStart]
@@ -358,7 +360,10 @@ public struct RequestBuilder: Sendable {
         return resolveURL("\(prefix)?\(encodedQuery)\(fragment)", baseURL: baseURL)
     }
 
-    private func encodeQueryComponent(_ value: String) -> String {
+    private func encodeQueryComponent(_ value: String, charset: String?) throws -> String {
+        if charset != nil {
+            return try percentEncode(value, charset: charset)
+        }
         var result = ""
         var index = value.startIndex
         while index < value.endIndex {
@@ -403,11 +408,34 @@ public struct RequestBuilder: Sendable {
             [45, 46, 95, 126].contains(value)
     }
 
-    private func percentEncode(_ value: String) -> String {
-        var allowed = CharacterSet.alphanumerics
-        allowed.insert(charactersIn: "-._~")
-        return value.addingPercentEncoding(withAllowedCharacters: allowed)?
-            .replacingOccurrences(of: "%20", with: "+") ?? value
+    private func percentEncode(_ value: String, charset: String?) throws -> String {
+        let bytes = try textEncoder.encode(value, charset: charset ?? "UTF-8")
+        return bytes.map { byte in
+            if isFormUnreserved(byte) { return String(UnicodeScalar(byte)) }
+            if byte == 0x20 { return "+" }
+            return String(format: "%%%02X", byte)
+        }.joined()
+    }
+
+    private func isFormUnreserved(_ byte: UInt8) -> Bool {
+        (48...57).contains(byte) ||
+            (65...90).contains(byte) ||
+            (97...122).contains(byte) ||
+            [45, 46, 95, 126].contains(byte)
+    }
+
+    private func contentTypeCharset(_ contentType: String?) -> String? {
+        guard let contentType else { return nil }
+        for part in contentType.split(separator: ";").dropFirst() {
+            let pair = part.split(separator: "=", maxSplits: 1)
+            guard pair.count == 2,
+                  pair[0].trimmingCharacters(in: .whitespacesAndNewlines)
+                    .caseInsensitiveCompare("charset") == .orderedSame else { continue }
+            return pair[1]
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+        }
+        return nil
     }
 
     private func mergeCookies(_ cookies: [HTTPCookie], into headers: inout HTTPHeaders) {

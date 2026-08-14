@@ -1,0 +1,27 @@
+{
+  "bookSourceName": "中文兼容夹具",
+  "bookSourceUrl": "https://fixture.invalid",
+  "fixtureRevision": "desensitized-v1",
+  "searchUrl": "https://fixture.invalid/search?keyword={{key}},{\"charset\":\"GBK\"}",
+  "ruleSearch": {
+    "bookList": "class.book",
+    "name": "class.name@text",
+    "author": "class.author@text",
+    "bookUrl": "class.name@href"
+  },
+  "ruleBookInfo": {
+    "init": "id.info",
+    "name": "class.name@text",
+    "author": "class.author@text",
+    "intro": "class.intro@text",
+    "tocUrl": "class.toc@href"
+  },
+  "ruleToc": {
+    "chapterList": "class.chapter",
+    "chapterName": "@text",
+    "chapterUrl": "@href"
+  },
+  "ruleContent": {
+    "content": "id.content@text"
+  }
+}

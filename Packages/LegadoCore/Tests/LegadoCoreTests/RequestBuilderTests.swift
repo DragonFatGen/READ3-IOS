@@ -30,6 +30,56 @@ final class RequestBuilderTests: XCTestCase {
         )
     }
 
+    func testChineseGETQueryUsesConfiguredGBKCharset() async throws {
+        let request = try await RequestBuilder().build(
+            #"https://example.invalid/search?keyword=科幻,{"charset":"GBK"}"#
+        )
+        XCTAssertEqual(
+            request.url.absoluteString,
+            "https://example.invalid/search?keyword=%BF%C6%BB%C3"
+        )
+    }
+
+    func testURLCharsetAliasEncodesEveryGETValueIncludingExistingEscape() async throws {
+        let request = try await RequestBuilder().build(
+            #"https://example.invalid/search?keyword=中文&escaped=%2F,{"charset":"cp936"}"#
+        )
+        XCTAssertEqual(
+            request.url.absoluteString,
+            "https://example.invalid/search?keyword=%D6%D0%CE%C4&escaped=%252F"
+        )
+    }
+
+    func testChinesePOSTFormBodyUsesConfiguredGB18030Charset() async throws {
+        let request = try await RequestBuilder().build(
+            #"https://example.invalid/search,{"method":"POST","charset":"GB18030","body":"keyword=阅读"}"#
+        )
+        XCTAssertEqual(request.method, .post)
+        XCTAssertEqual(request.bodyKind, .form)
+        XCTAssertEqual(
+            String(decoding: try XCTUnwrap(request.body), as: UTF8.self),
+            "keyword=%D4%C4%B6%C1"
+        )
+    }
+
+    func testRawPOSTUsesContentTypeCharsetInsteadOfURLOptionCharset() async throws {
+        let request = try await RequestBuilder().build(
+            #"https://example.invalid/raw,{"method":"POST","charset":"UTF-8","headers":{"Content-Type":"text/plain; charset=GBK"},"body":"中文"}"#
+        )
+        XCTAssertEqual(request.body, Data([0xD6, 0xD0, 0xCE, 0xC4]))
+        XCTAssertEqual(request.bodyKind, .raw)
+    }
+
+    func testRawPOSTEncodingFailureIsTyped() async {
+        await XCTAssertThrowsErrorAsync {
+            _ = try await RequestBuilder().build(
+                #"https://example.invalid/raw,{"method":"POST","headers":{"Content-Type":"text/plain; charset=GBK"},"body":"😀"}"#
+            )
+        } verify: {
+            XCTAssertEqual($0 as? HTTPError, .encodingFailed("GBK"))
+        }
+    }
+
     func testURLBoundaryAndPOSTRawBody() async throws {
         let rule = #"https://example.invalid/api,{"method":"POST","body":{"name":"book"}}"#
         let request = try await RequestBuilder().build(rule)
@@ -204,11 +254,14 @@ final class RequestBuilderTests: XCTestCase {
 
 private func XCTAssertThrowsErrorAsync(
     _ expression: () async throws -> Void,
+    verify: ((any Error) -> Void)? = nil,
     file: StaticString = #filePath,
     line: UInt = #line
 ) async {
     do {
         try await expression()
         XCTFail("Expected error", file: file, line: line)
-    } catch {}
+    } catch {
+        verify?(error)
+    }
 }

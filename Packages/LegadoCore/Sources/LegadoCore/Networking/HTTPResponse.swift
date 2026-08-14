@@ -39,7 +39,7 @@ public struct HTTPResponse: Equatable, Sendable {
         explicitCharset: String? = nil,
         decoder: any TextDecoder = FoundationTextDecoder()
     ) throws -> String {
-        let charset = explicitCharset ?? contentTypeCharset ?? "utf-8"
+        let charset = explicitCharset ?? contentTypeCharset ?? htmlMetaCharset ?? "utf-8"
         return try decoder.decode(data, charset: charset)
     }
 
@@ -52,6 +52,26 @@ public struct HTTPResponse: Equatable, Sendable {
                     .caseInsensitiveCompare("charset") == .orderedSame else { continue }
             return pair[1].trimmingCharacters(in: .whitespacesAndNewlines)
                 .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+        }
+        return nil
+    }
+
+    public var htmlMetaCharset: String? {
+        let prefix = data.prefix(16_384)
+        let probe = String(decoding: prefix, as: UTF8.self)
+        let patterns = [
+            #"(?i)<meta\b[^>]*\bcharset\s*=\s*[\"']?\s*([a-z0-9._:-]+)"#,
+            #"(?i)<meta\b[^>]*\bcontent\s*=\s*[\"'][^\"']*charset\s*=\s*([a-z0-9._:-]+)"#
+        ]
+        for pattern in patterns {
+            guard let expression = try? NSRegularExpression(pattern: pattern),
+                  let match = expression.firstMatch(
+                    in: probe,
+                    range: NSRange(probe.startIndex..., in: probe)
+                  ),
+                  match.numberOfRanges > 1,
+                  let range = Range(match.range(at: 1), in: probe) else { continue }
+            return String(probe[range])
         }
         return nil
     }

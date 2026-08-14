@@ -35,7 +35,7 @@ Android's `AnalyzeUrl.UrlOption` fields at the pinned commit are:
 | `method` | Only case-insensitive `POST` changes the default GET | GET/POST modeled; unknown values fall back in compatible mode and throw in strict mode |
 | `headers` | Object or JSON-object string; values use `toString()` | Parsed and merged case-insensitively |
 | `body` | String, JSON object, or JSON array serialized back to text | Preserved and converted to form or raw bytes |
-| `charset` | URL/form parameter encoding; `escape` has special JavaScript-style escaping | Preserved; UTF-8 form encoding implemented, other encoders are explicit future work |
+| `charset` | URL/form parameter encoding; `escape` has special JavaScript-style escaping | UTF-8, GBK, GB2312, GB18030, and Big5 query/form encoding implemented; `escape` remains deferred |
 | `retry` | Additional attempts after the first, stopping on a successful status | Preserved and implemented by the URLSession adapter |
 | `type` | Switches to byte/hex handling | Preserved only |
 | `webView` | Any value except null, empty, false, or `"false"` enables WebView | Preserved as `requiresWebView` only |
@@ -95,17 +95,27 @@ body without one is sent by `postJson` with
 was originally a JSON object. Form requests use
 `application/x-www-form-urlencoded`.
 
+For a raw body with an explicit Content-Type, OkHttp encodes the Kotlin string
+using that media type's charset (UTF-8 when absent). The URL option `charset`
+does not override raw-body encoding. READ3-IOS follows the same separation and
+returns `HTTPError.encodingFailed` when a supported target encoding cannot
+represent the supplied string.
+
 GET query and form field values are encoded before OkHttp receives them.
-Android supports Java charset names and the special `escape` value. The current
-cross-platform builder implements deterministic UTF-8 form encoding and throws
-`unsupportedCharset` rather than treating GBK-family input as UTF-8.
+Android supports Java charset names and the special `escape` value. The
+cross-platform builder implements deterministic UTF-8, GBK, GB2312, GB18030,
+and Big5 value encoding for GET queries and POST forms. It preserves already
+encoded GET values only when no explicit charset is supplied, matching the
+Android branch that encodes every value when `charset` is present. Field names
+remain UTF-8, as Android only runs `URLEncoder` over field values. `escape`
+remains unsupported.
 
 ## Response and text decoding
 
 `HTTPResponse` always retains status, headers, raw `Data`, final URL, redirect
 metadata, and response cookies. Text decoding is a separate operation through
 `TextDecoder`. The selection order is explicit caller charset, Content-Type
-charset, then UTF-8.
+charset, HTML meta charset, then UTF-8.
 
 Android removes a UTF-8 BOM, then uses an explicitly passed decoder charset,
 then the Content-Type charset, then HTML/content encoding detection. Its normal
@@ -113,11 +123,13 @@ then the Content-Type charset, then HTML/content encoding detection. Its normal
 the response decoder. READ3-IOS likewise keeps request parameter charset
 separate from response decoding.
 
-`FoundationTextDecoder` currently supports UTF-8, UTF-16 variants, ASCII, and
-ISO-8859-1. GBK, GB2312, GB18030, and Big5 are recognized but deliberately
-reported as unsupported. A later platform-neutral decoder implementation can
-add them behind the protocol without changing HTTP clients or response models.
-HTML encoding detection is also deferred.
+`FoundationTextDecoder` supports UTF-8, UTF-16 variants, ASCII, ISO-8859-1,
+GBK, GB2312, GB18030, and Big5. Windows uses the corresponding system code
+pages; Darwin uses Foundation encoding identifiers. HTML `<meta charset>` and
+legacy meta Content-Type declarations are detected in the first 16 KiB. ICU
+statistical byte detection remains deferred. As with Android's
+`String(bytes, Charset)`, malformed Chinese byte sequences decode with U+FFFD;
+unknown charset names remain typed `unsupportedCharset` errors.
 
 ## Redirects, status, and errors
 
@@ -164,5 +176,5 @@ requests. Tests remain deterministic and never access the public internet.
 - WebView loading, `webJs`, login pages, and cookie synchronization with WebView;
 - proxy execution, Cronet, unsafe TLS compatibility, multipart upload, `type`
   byte/hex transformation, concurrent-rate throttling, and persistent cookies;
-- GBK/GB2312/GB18030/Big5 decoding and HTML charset detection;
+- statistical response charset detection beyond HTTP headers and HTML meta;
 - search, explore, book-info, TOC, content orchestration, and all UI.

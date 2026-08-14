@@ -24,9 +24,10 @@ final class HTTPResponseAndClientTests: XCTestCase {
         )
         XCTAssertEqual(response.contentTypeCharset, "iso-8859-1")
         XCTAssertEqual(try response.text(), "café")
-        XCTAssertThrowsError(try response.text(explicitCharset: "GBK")) {
-            XCTAssertEqual($0 as? HTTPError, .unsupportedCharset("GBK"))
-        }
+        XCTAssertEqual(
+            try response.text(explicitCharset: "GBK", decoder: CharsetEchoDecoder()),
+            "GBK"
+        )
     }
 
     func testRedirectAndCookieMetadata() throws {
@@ -73,4 +74,8 @@ final class HTTPResponseAndClientTests: XCTestCase {
             XCTAssertEqual(error as? HTTPError, .transportError("offline"))
         }
     }
+}
+
+private struct CharsetEchoDecoder: TextDecoder {
+    func decode(_ data: Data, charset: String) throws -> String { charset }
 }
