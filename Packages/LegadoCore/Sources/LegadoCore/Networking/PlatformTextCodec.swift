@@ -164,11 +164,13 @@ enum PlatformTextCodec {
         return try? decodeWindows(data, codePage: encoding.windowsCodePage, charset: charset)
         #else
         #if canImport(Darwin)
-        if let coreFoundationEncoding = darwinCoreFoundationEncoding(for: encoding.kind) {
-            return decodeDarwin(data, encoding: coreFoundationEncoding)
-        }
-        #endif
+        return String(
+            data: data,
+            encoding: darwinFoundationDecodingEncoding(for: encoding)
+        )
+        #else
         return String(data: data, encoding: foundationEncoding(for: encoding))
+        #endif
         #endif
     }
 
@@ -200,34 +202,19 @@ enum PlatformTextCodec {
 
     #if !os(Windows)
     #if canImport(Darwin)
-    private static func darwinCoreFoundationEncoding(
-        for kind: ChineseEncodingKind
-    ) -> CFStringEncoding? {
-        switch kind {
-        case .gb2312:
-            return CFStringEncoding(CFStringEncodings.GB_2312_80.rawValue)
-        case .gbk:
-            return CFStringEncoding(CFStringEncodings.GBK_95.rawValue)
+    private static func darwinFoundationDecodingEncoding(
+        for encoding: ChineseEncoding
+    ) -> String.Encoding {
+        switch encoding.kind {
+        case .gb2312, .gbk:
+            // GB18030 is a strict superset of both encodings and is supported by
+            // current Darwin Foundation, unlike the legacy GB2312/GBK identifiers.
+            let cocoaEncoding = CFStringConvertEncodingToNSStringEncoding(
+                CFStringEncoding(CFStringEncodings.GB_18030_2000.rawValue)
+            )
+            return String.Encoding(rawValue: cocoaEncoding)
         case .gb18030, .big5:
-            return nil
-        }
-    }
-
-    private static func decodeDarwin(
-        _ data: Data,
-        encoding: CFStringEncoding
-    ) -> String? {
-        guard !data.isEmpty else { return "" }
-        return data.withUnsafeBytes { bytes in
-            guard let source = bytes.baseAddress?.assumingMemoryBound(to: UInt8.self),
-                  let decoded = CFStringCreateWithBytes(
-                    kCFAllocatorDefault,
-                    source,
-                    bytes.count,
-                    encoding,
-                    false
-                  ) else { return nil }
-            return decoded as String
+            return foundationEncoding(for: encoding)
         }
     }
     #endif
