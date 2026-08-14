@@ -212,6 +212,12 @@ public struct BookSourceCompatibilityRunner: Sendable {
             category = classify(value, message: message, fallback: operation)
         case is SourceImportError:
             category = .import
+        case is RuleSyntaxError:
+            category = .ruleParser
+        case let value as RuleExecutionError:
+            category = classify(value)
+        case let value as HTTPError:
+            category = classify(value)
         default:
             category = Self.messageCategory(message) ?? operation
         }
@@ -276,21 +282,64 @@ public struct BookSourceCompatibilityRunner: Sendable {
         }
     }
 
+    private func classify(_ error: RuleExecutionError) -> CompatibilityStage {
+        switch error {
+        case let .unsupportedExecutionNode(node):
+            return node.localizedCaseInsensitiveContains("javascript")
+                ? .javascript
+                : .unsupportedCapability
+        case .invalidRegularExpression, .invalidCaptureGroup:
+            return .ruleParser
+        case .selectorExecutionFailed, .invalidJSON, .invalidJSONPath, .pathNotFound,
+             .resultTypeMismatch, .invalidXPath, .invalidDocument, .xpathResultTypeMismatch:
+            return .selector
+        case .unsupportedJSONPathFeature, .unsupportedXPathFeature:
+            return .unsupportedCapability
+        }
+    }
+
+    private func classify(_ error: HTTPError) -> CompatibilityStage {
+        switch error {
+        case .unsupportedCharset, .encodingFailed, .decodingFailed:
+            return .charset
+        case .invalidURL, .invalidRequestOptions, .invalidHeaders, .unsupportedMethod,
+             .transportError, .invalidResponse, .httpStatus:
+            return .request
+        }
+    }
+
     private static func messageCategory(_ message: String) -> CompatibilityStage? {
         let value = message.lowercased()
         if value.contains("javascript") { return .javascript }
-        if value.contains("unsupported") { return .unsupportedCapability }
         if value.contains("charset") || value.contains("decod") || value.contains("encod") {
             return .charset
         }
-        if value.contains("syntax") || value.contains("unbalanced") ||
-            value.contains("unterminated") || value.contains("prefix") ||
-            value.contains("expression") || value.contains("regular expression") {
+        let parserDiagnostics = [
+            "unbalanced ",
+            "unterminated template",
+            "empty expression around",
+            "malformed regular expression",
+            "invalid regular expression",
+            "unsupported rule prefix",
+            "a rule expression is required"
+        ]
+        if parserDiagnostics.contains(where: value.contains) {
             return .ruleParser
         }
-        if value.contains("selector") || value.contains("jsonpath") ||
-            value.contains("xpath") || value.contains("document") {
+        let selectorDiagnostics = [
+            "selector execution failed",
+            "invalid json:",
+            "invalid jsonpath",
+            "jsonpath did not match",
+            "jsonpath result type mismatch",
+            "invalid xpath",
+            "xpath result type mismatch"
+        ]
+        if selectorDiagnostics.contains(where: value.contains) {
             return .selector
+        }
+        if value.contains("unsupported") || value.contains("no executor is installed") {
+            return .unsupportedCapability
         }
         return nil
     }

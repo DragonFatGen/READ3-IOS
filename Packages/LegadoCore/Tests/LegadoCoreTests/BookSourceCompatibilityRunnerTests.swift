@@ -72,7 +72,7 @@ final class BookSourceCompatibilityRunnerTests: XCTestCase {
     func testRuleParserFailureCategory() async throws {
         let json = try replacing(
             #""bookList": "class.book""#,
-            with: #""bookList": "{{unterminated""#
+            with: #""bookList": "$[?(@.name""#
         )
         let report = await BookSourceCompatibilityRunner(
             httpClient: MockHTTPClient(response: try fixtureResponse("search.html", url: "https://fixture.invalid/search"))
@@ -82,7 +82,10 @@ final class BookSourceCompatibilityRunnerTests: XCTestCase {
     }
 
     func testSelectorFailureCategory() async throws {
-        let json = try replacing(#""bookList": "class.book""#, with: #""bookList": "@CSS:[""#)
+        let json = try replacing(
+            #""bookList": "class.book""#,
+            with: #""bookList": "@CSS:h1""#
+        )
         let report = await BookSourceCompatibilityRunner(
             httpClient: MockHTTPClient(response: try fixtureResponse("search.html", url: "https://fixture.invalid/search"))
         ).run(sourceJSON: json, keyword: "科幻")

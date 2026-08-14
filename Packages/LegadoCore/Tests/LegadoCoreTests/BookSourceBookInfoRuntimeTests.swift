@@ -210,7 +210,10 @@ final class BookSourceBookInfoRuntimeTests: XCTestCase {
     }
 
     func testUnsupportedCharsetIsTypedDecodeError() async throws {
-        let (runtime, _) = runtime(fixture: "html-basic.html", contentType: "text/html; charset=gbk")
+        let (runtime, _) = runtime(
+            fixture: "html-basic.html",
+            contentType: "text/html; charset=x-unsupported-test"
+        )
         await XCTAssertThrowsErrorAsync(try await runtime.fetchBookInfo(source: htmlSource(), book: book())) {
             guard let error = $0 as? BookInfoError,
                   case .responseDecodeFailed = error else {

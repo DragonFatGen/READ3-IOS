@@ -213,7 +213,10 @@ final class BookSourceSearchRuntimeTests: XCTestCase {
     }
 
     func testUnsupportedResponseCharsetIsTypedSearchError() async throws {
-        let (runtime, _) = runtime(fixture: "html-basic.html", contentType: "text/html; charset=gbk")
+        let (runtime, _) = runtime(
+            fixture: "html-basic.html",
+            contentType: "text/html; charset=x-unsupported-test"
+        )
         do {
             _ = try await runtime.search(source: basicHTMLSource(), keyword: "x")
             XCTFail("Expected decode error")

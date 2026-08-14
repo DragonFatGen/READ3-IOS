@@ -65,9 +65,13 @@ cross-platform codec. The public supported set is:
 
 Common aliases are normalized case-insensitively. Windows uses code pages 936,
 54936, and 950. GB2312 decoding validates the narrower GB2312 byte ranges before
-using CP936, and encoding rejects CP936 output outside those ranges. Darwin uses
-the corresponding Foundation encoding identifiers. No Apple-only framework is
-imported into LegadoCore.
+using CP936, and encoding rejects CP936 output outside those ranges. Darwin
+converts the documented CoreFoundation external-encoding identifiers to
+`NSStringEncoding` through `CFStringConvertEncodingToNSStringEncoding` instead
+of assuming the two raw-value spaces are interchangeable. Chinese response data
+is decoded in contiguous valid runs so stateful platform codecs receive the
+complete byte stream. No UI or other Apple-only framework is imported into
+LegadoCore.
 
 Malformed GBK-family or Big5 units produce U+FFFD while valid following bytes
 continue decoding, matching Android's replacement behavior. Unknown names

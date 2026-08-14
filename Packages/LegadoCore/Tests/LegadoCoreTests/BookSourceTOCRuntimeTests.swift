@@ -391,7 +391,10 @@ final class BookSourceTOCRuntimeTests: XCTestCase {
     }
 
     func testUnsupportedCharsetIsTypedDecodeFailure() async throws {
-        let response = try fixtureResponse("html-basic.html", contentType: "text/html; charset=GBK")
+        let response = try fixtureResponse(
+            "html-basic.html",
+            contentType: "text/html; charset=x-unsupported-test"
+        )
         let runtime = BookSourceTOCRuntime(httpClient: MockHTTPClient(response: response))
         await XCTAssertThrowsErrorAsync(try await runtime.fetchTOC(source: htmlSource(), book: book())) {
             guard let error = $0 as? TOCError,

@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(CoreFoundation)
+import CoreFoundation
+#endif
+
 #if os(Windows)
 import WinSDK
 #endif
@@ -38,7 +42,7 @@ enum PlatformTextCodec {
         }
         return data
         #else
-        let encoding = String.Encoding(rawValue: chinese.foundationRawValue)
+        let encoding = foundationEncoding(for: chinese)
         guard let data = value.data(using: encoding, allowLossyConversion: false) else {
             throw HTTPError.encodingFailed(charset)
         }
@@ -67,7 +71,8 @@ enum PlatformTextCodec {
 
     private struct ChineseEncoding {
         let windowsCodePage: UInt32
-        let foundationRawValue: UInt
+        /// CFString external-encoding identifier, not an NSStringEncoding raw value.
+        let coreFoundationRawValue: UInt32
         let kind: ChineseEncodingKind
     }
 
@@ -78,25 +83,25 @@ enum PlatformTextCodec {
         case "gb2312", "gb-2312", "gb-2312-80":
             return ChineseEncoding(
                 windowsCodePage: 936,
-                foundationRawValue: 0x8000_0630,
+                coreFoundationRawValue: 0x0630,
                 kind: .gb2312
             )
         case "gbk", "gbk-95", "cp936", "windows-936":
             return ChineseEncoding(
                 windowsCodePage: 936,
-                foundationRawValue: 0x8000_0631,
+                coreFoundationRawValue: 0x0631,
                 kind: .gbk
             )
         case "gb18030", "gb-18030", "gb-18030-2000":
             return ChineseEncoding(
                 windowsCodePage: 54_936,
-                foundationRawValue: 0x8000_0632,
+                coreFoundationRawValue: 0x0632,
                 kind: .gb18030
             )
         case "big5", "big-5", "cp950", "windows-950":
             return ChineseEncoding(
                 windowsCodePage: 950,
-                foundationRawValue: 0x8000_0A03,
+                coreFoundationRawValue: 0x0A03,
                 kind: .big5
             )
         default:
@@ -119,24 +124,38 @@ enum PlatformTextCodec {
         var index = 0
         while index < bytes.count {
             let length = encodedUnitLength(bytes, at: index, kind: encoding.kind)
-            guard length > 0, index + length <= bytes.count else {
+            guard length > 0 else {
                 result.append("\u{FFFD}")
                 index += 1
                 continue
             }
-            let unit = Data(bytes[index..<(index + length)])
-            if let decoded = decodeChineseUnit(unit, encoding: encoding, charset: charset) {
+
+            // Foundation/CoreFoundation Chinese codecs expect a complete byte
+            // stream. Reinitializing the decoder for each two-byte character can
+            // turn valid GBK/GB2312 input into replacement characters on Darwin.
+            let runStart = index
+            index += length
+            while index < bytes.count {
+                let nextLength = encodedUnitLength(bytes, at: index, kind: encoding.kind)
+                guard nextLength > 0 else { break }
+                index += nextLength
+            }
+            let run = Data(bytes[runStart..<index])
+            if let decoded = decodeChineseRun(run, encoding: encoding, charset: charset) {
                 result += decoded
-                index += length
             } else {
-                result.append("\u{FFFD}")
-                index += 1
+                appendLossyFallback(
+                    for: Array(bytes[runStart..<index]),
+                    encoding: encoding,
+                    charset: charset,
+                    to: &result
+                )
             }
         }
         return result
     }
 
-    private static func decodeChineseUnit(
+    private static func decodeChineseRun(
         _ data: Data,
         encoding: ChineseEncoding,
         charset: String
@@ -144,12 +163,50 @@ enum PlatformTextCodec {
         #if os(Windows)
         return try? decodeWindows(data, codePage: encoding.windowsCodePage, charset: charset)
         #else
-        return String(
-            data: data,
-            encoding: String.Encoding(rawValue: encoding.foundationRawValue)
-        )
+        return String(data: data, encoding: foundationEncoding(for: encoding))
         #endif
     }
+
+    private static func appendLossyFallback(
+        for bytes: [UInt8],
+        encoding: ChineseEncoding,
+        charset: String,
+        to result: inout String
+    ) {
+        var index = 0
+        while index < bytes.count {
+            let length = encodedUnitLength(bytes, at: index, kind: encoding.kind)
+            if bytes[index] < 0x80 {
+                result += String(UnicodeScalar(bytes[index]))
+            } else if length > 0,
+                      let decoded = decodeChineseRun(
+                        Data(bytes[index..<(index + length)]),
+                        encoding: encoding,
+                        charset: charset
+                      ),
+                      !decoded.isEmpty {
+                result += decoded
+            } else {
+                result.append("\u{FFFD}")
+            }
+            index += max(length, 1)
+        }
+    }
+
+    #if !os(Windows)
+    private static func foundationEncoding(for encoding: ChineseEncoding) -> String.Encoding {
+        #if canImport(CoreFoundation)
+        let cocoaEncoding = CFStringConvertEncodingToNSStringEncoding(
+            CFStringEncoding(encoding.coreFoundationRawValue)
+        )
+        return String.Encoding(rawValue: cocoaEncoding)
+        #else
+        // Foundation's external NSString encodings use the CF identifier in the
+        // low bits. This branch is only for platforms without CoreFoundation.
+        return String.Encoding(rawValue: UInt(encoding.coreFoundationRawValue) | 0x8000_0000)
+        #endif
+    }
+    #endif
 
     private static func encodedUnitLength(
         _ bytes: [UInt8],
