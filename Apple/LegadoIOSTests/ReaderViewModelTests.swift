@@ -105,15 +105,240 @@ final class ReaderViewModelTests: XCTestCase {
         XCTAssertEqual(policies.first, .reloadIgnoringCache)
     }
 
+    func testPagedLoadTriggersPaginationWhileScrollDoesNot() async {
+        let pagedPaginator = FakeReaderPaginator(pageCount: 3)
+        let paged = makeModel(
+            service: RecordingContentService(), store: MemoryProgressStore(),
+            paginator: pagedPaginator, layoutMode: .paged
+        )
+        paged.updatePaginationConfiguration(testConfiguration())
+        paged.loadInitialChapter()
+        await waitUntil { paged.pages.count == 3 }
+        let pagedCalls = await pagedPaginator.callCount
+        XCTAssertEqual(pagedCalls, 1)
+
+        let scrollPaginator = FakeReaderPaginator(pageCount: 3)
+        let scroll = makeModel(
+            service: RecordingContentService(), store: MemoryProgressStore(),
+            paginator: scrollPaginator, layoutMode: .scroll
+        )
+        scroll.updatePaginationConfiguration(testConfiguration())
+        scroll.loadInitialChapter()
+        await waitUntil { scroll.content != nil }
+        let scrollCalls = await scrollPaginator.callCount
+        XCTAssertEqual(scrollCalls, 0)
+    }
+
+    func testPageNavigationAndNormalizedProgress() async {
+        let model = makePagedModel(pageCount: 3)
+        await waitUntil { model.pages.count == 3 }
+        XCTAssertEqual(model.currentPageIndex, 0)
+        model.turnPageForward()
+        XCTAssertEqual(model.currentPageIndex, 1)
+        XCTAssertEqual(model.chapterProgress, 0.5)
+        model.turnPageBackward()
+        XCTAssertEqual(model.currentPageIndex, 0)
+        XCTAssertEqual(model.chapterProgress, 0)
+    }
+
+    func testPageBoundariesCrossChaptersAtCorrectEnds() async {
+        let forward = makePagedModel(initialIndex: 1, pageCount: 3)
+        await waitUntil { forward.pages.count == 3 }
+        forward.selectPage(2)
+        forward.turnPageForward()
+        await waitUntil { forward.currentChapterIndex == 2 && forward.pages.count == 3 }
+        XCTAssertEqual(forward.currentPageIndex, 0)
+
+        let backward = makePagedModel(initialIndex: 1, pageCount: 3)
+        await waitUntil { backward.pages.count == 3 }
+        backward.turnPageBackward()
+        await waitUntil { backward.currentChapterIndex == 0 && backward.pages.count == 3 }
+        XCTAssertEqual(backward.currentPageIndex, 2)
+    }
+
+    func testSavedProgressRestoresToEquivalentPage() async {
+        let store = MemoryProgressStore()
+        store.value = ReadingProgress(
+            lastChapterURL: testChapter(index: 1).url,
+            lastChapterName: testChapter(index: 1).name,
+            lastChapterIndex: 1,
+            chapterProgress: 0.5,
+            chapterCount: 3,
+            lastReadAt: Date()
+        )
+        let model = makeModel(
+            initialIndex: 1, service: RecordingContentService(), store: store,
+            paginator: FakeReaderPaginator(pageCount: 5), layoutMode: .paged
+        )
+        model.updatePaginationConfiguration(testConfiguration())
+        model.loadInitialChapter()
+        await waitUntil { model.pages.count == 5 }
+        XCTAssertEqual(model.currentPageIndex, 2)
+    }
+
+    func testLayoutChangesRepaginateAndPreserveProgress() async {
+        let paginator = FakeReaderPaginator(pageCount: 5)
+        let model = makeModel(
+            service: RecordingContentService(), store: MemoryProgressStore(),
+            paginator: paginator, layoutMode: .paged
+        )
+        model.updatePaginationConfiguration(testConfiguration())
+        model.loadInitialChapter()
+        await waitUntil { model.pages.count == 5 }
+        model.selectPage(2)
+
+        for configuration in [
+            testConfiguration(fontSize: 22),
+            testConfiguration(fontSize: 22, lineSpacing: 12),
+            testConfiguration(fontSize: 22, lineSpacing: 12, padding: 30),
+            testConfiguration(
+                size: CGSize(width: 480, height: 320),
+                fontSize: 22,
+                lineSpacing: 12,
+                padding: 30
+            )
+        ] {
+            model.updatePaginationConfiguration(configuration)
+            await waitUntil { !model.isPaginating }
+            XCTAssertEqual(model.currentPageIndex, 2)
+        }
+        let calls = await paginator.callCount
+        XCTAssertEqual(calls, 5)
+    }
+
+    func testThemeDoesNotCauseRepagination() async {
+        let paginator = FakeReaderPaginator(pageCount: 3)
+        let model = makeModel(
+            service: RecordingContentService(), store: MemoryProgressStore(),
+            paginator: paginator, layoutMode: .paged
+        )
+        model.updatePaginationConfiguration(testConfiguration())
+        model.loadInitialChapter()
+        await waitUntil { model.pages.count == 3 }
+        let before = await paginator.callCount
+        let defaults = UserDefaults(suiteName: "ReaderThemeTest.\(UUID().uuidString)")!
+        let settings = ReaderSettingsStore(defaults: defaults, keyPrefix: "settings")
+        settings.selectTheme(.dark)
+        let after = await paginator.callCount
+        XCTAssertEqual(before, after)
+    }
+
+    func testStalePaginationCannotOverwriteNewConfiguration() async {
+        let paginator = FakeReaderPaginator(pageCount: 2, delay: .milliseconds(40))
+        let model = makeModel(
+            service: RecordingContentService(), store: MemoryProgressStore(),
+            paginator: paginator, layoutMode: .paged
+        )
+        model.updatePaginationConfiguration(testConfiguration(fontSize: 18))
+        model.loadInitialChapter()
+        await waitUntil { model.content != nil }
+        model.updatePaginationConfiguration(testConfiguration(fontSize: 26))
+        await waitUntil { model.pages.first?.text.hasPrefix("26.0") == true }
+        XCTAssertTrue(model.pages.allSatisfy { $0.text.hasPrefix("26.0") })
+    }
+
+    func testEmptyAndOnePagePaginationAreSafe() async {
+        let empty = makePagedModel(pageCount: 0)
+        await waitUntil { !empty.isPaginating && empty.content != nil }
+        XCTAssertEqual(empty.pages.count, 1)
+        XCTAssertEqual(empty.currentPageIndex, 0)
+
+        let one = makePagedModel(pageCount: 1)
+        await waitUntil { one.pages.count == 1 }
+        one.turnPageForward()
+        XCTAssertEqual(one.chapterProgress, 0)
+    }
+
+    func testSwitchingModesPreservesApproximateProgress() async {
+        let paginator = FakeReaderPaginator(pageCount: 5)
+        let model = makeModel(
+            service: RecordingContentService(), store: MemoryProgressStore(),
+            paginator: paginator, layoutMode: .scroll
+        )
+        model.updatePaginationConfiguration(testConfiguration())
+        model.loadInitialChapter()
+        await waitUntil { model.content != nil }
+        model.updateProgress(0.5)
+        model.setLayoutMode(.paged)
+        await waitUntil { model.pages.count == 5 }
+        XCTAssertEqual(model.currentPageIndex, 2)
+        model.setLayoutMode(.scroll)
+        XCTAssertEqual(model.consumeRestorationProgress(), 0.5)
+    }
+
+    func testPagedReaderUsesCachedContentService() async {
+        let source = testSource()
+        let book = testBookInfo()
+        let chapter = testChapter()
+        let key = ChapterCacheKey(source: source, book: book, chapter: chapter)
+        let cache = ReaderTestCache(entry: ChapterContentCacheEntry(
+            key: key,
+            chapterName: chapter.name,
+            content: "cached body",
+            chapterURL: chapter.url,
+            cachedAt: Date()
+        ))
+        let upstream = ReaderCountingContentService()
+        let service = CachedContentService(cache: cache, upstream: upstream)
+        let model = ReaderViewModel(
+            source: source,
+            book: book,
+            libraryBookID: "book",
+            chapters: [chapter],
+            initialChapterIndex: 0,
+            contentService: service,
+            progressStore: MemoryProgressStore(),
+            paginator: FakeReaderPaginator(pageCount: 2),
+            layoutMode: .paged
+        )
+        model.updatePaginationConfiguration(testConfiguration())
+        model.loadInitialChapter()
+        await waitUntil { model.pages.count == 2 }
+        XCTAssertEqual(model.content?.content, "cached body")
+        let requests = await upstream.requestedIndices
+        XCTAssertTrue(requests.isEmpty)
+    }
+
     private func makeModel(
         initialIndex: Int = 0,
-        service: RecordingContentService,
-        store: MemoryProgressStore
+        service: any ChapterContentLoading,
+        store: MemoryProgressStore,
+        paginator: any ReaderPaginating = FakeReaderPaginator(pageCount: 3),
+        layoutMode: ReaderLayoutMode = .scroll
     ) -> ReaderViewModel {
         ReaderViewModel(
             source: testSource(), book: testBookInfo(), libraryBookID: "book",
             chapters: (0..<3).map(testChapter), initialChapterIndex: initialIndex,
-            contentService: service, progressStore: store
+            contentService: service, progressStore: store,
+            paginator: paginator, layoutMode: layoutMode
+        )
+    }
+
+    private func makePagedModel(initialIndex: Int = 0, pageCount: Int) -> ReaderViewModel {
+        let model = makeModel(
+            initialIndex: initialIndex,
+            service: RecordingContentService(),
+            store: MemoryProgressStore(),
+            paginator: FakeReaderPaginator(pageCount: pageCount),
+            layoutMode: .paged
+        )
+        model.updatePaginationConfiguration(testConfiguration())
+        model.loadInitialChapter()
+        return model
+    }
+
+    private func testConfiguration(
+        size: CGSize = CGSize(width: 320, height: 480),
+        fontSize: CGFloat = 19,
+        lineSpacing: CGFloat = 8,
+        padding: CGFloat = 20
+    ) -> PaginationConfiguration {
+        PaginationConfiguration(
+            size: size,
+            fontSize: fontSize,
+            lineSpacing: lineSpacing,
+            horizontalPadding: padding,
+            verticalPadding: 20
         )
     }
 
@@ -126,6 +351,30 @@ final class ReaderViewModelTests: XCTestCase {
             try? await Task.sleep(for: .milliseconds(2))
         }
         XCTFail("Timed out waiting for ReaderViewModel state")
+    }
+}
+
+private actor FakeReaderPaginator: ReaderPaginating {
+    private let pageCount: Int
+    private let delay: Duration
+    private(set) var callCount = 0
+
+    init(pageCount: Int, delay: Duration = .zero) {
+        self.pageCount = pageCount
+        self.delay = delay
+    }
+
+    func paginate(text: String, configuration: PaginationConfiguration) async -> [ReaderPage] {
+        callCount += 1
+        if delay > .zero { try? await Task.sleep(for: delay) }
+        guard pageCount > 0 else { return [] }
+        return (0..<pageCount).map { index in
+            ReaderPage(
+                index: index,
+                utf16Range: index..<(index + 1),
+                text: "\(configuration.fontSize)-page-\(index)"
+            )
+        }
     }
 }
 
@@ -166,4 +415,38 @@ private actor RecordingContentService: ChapterContentLoading {
         }
         return ChapterContentResult(content: "正文 \(chapter.index)", chapterURL: chapter.url)
     }
+}
+
+private actor ReaderCountingContentService: ChapterContentLoading {
+    private(set) var requestedIndices: [Int] = []
+
+    func loadContent(
+        source: BookSource,
+        book: BookInfoResult,
+        chapter: BookChapterResult,
+        policy: ContentLoadPolicy
+    ) async throws -> ChapterContentResult {
+        _ = policy
+        requestedIndices.append(chapter.index)
+        return ChapterContentResult(content: "network", chapterURL: chapter.url)
+    }
+}
+
+private actor ReaderTestCache: ChapterContentCache {
+    private var entry: ChapterContentCacheEntry?
+
+    init(entry: ChapterContentCacheEntry?) { self.entry = entry }
+
+    func content(for key: ChapterCacheKey) async -> ChapterContentCacheEntry? {
+        entry?.key == key ? entry : nil
+    }
+    func save(_ entry: ChapterContentCacheEntry) async throws { self.entry = entry }
+    func remove(_ key: ChapterCacheKey) async { if entry?.key == key { entry = nil } }
+    func removeAll(for book: ChapterCacheBookKey) async {
+        if entry?.key.bookKey == book { entry = nil }
+    }
+    func clearExpired(before date: Date) async {
+        if let cachedAt = entry?.cachedAt, cachedAt < date { entry = nil }
+    }
+    func clearAll() async { entry = nil }
 }

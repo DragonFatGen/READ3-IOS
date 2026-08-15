@@ -7,6 +7,25 @@ struct ReaderSettingsSheet: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("阅读模式") {
+                    HStack {
+                        ForEach(ReaderLayoutMode.allCases, id: \.self) { mode in
+                            Button {
+                                store.selectLayoutMode(mode)
+                            } label: {
+                                Text(mode.title)
+                                    .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.bordered)
+                            .tint(Color.accentColor.opacity(
+                                store.settings.layoutMode == mode ? 1 : 0.55
+                            ))
+                            .accessibilityValue(
+                                store.settings.layoutMode == mode ? "已选择" : ""
+                            )
+                        }
+                    }
+                }
                 stepperRow(
                     title: "字号",
                     value: store.settings.fontSize,

@@ -1,5 +1,17 @@
 import SwiftUI
 
+enum ReaderLayoutMode: String, CaseIterable, Codable, Hashable {
+    case scroll
+    case paged
+
+    var title: String {
+        switch self {
+        case .scroll: "滚动"
+        case .paged: "分页"
+        }
+    }
+}
+
 enum ReaderTheme: String, CaseIterable, Codable, Hashable {
     case system
     case light
@@ -45,9 +57,14 @@ struct ReaderSettings: Equatable {
     var lineSpacing: Double
     var horizontalPadding: Double
     var theme: ReaderTheme
+    var layoutMode: ReaderLayoutMode
 
     static let `default` = ReaderSettings(
-        fontSize: 19, lineSpacing: 8, horizontalPadding: 20, theme: .system
+        fontSize: 19,
+        lineSpacing: 8,
+        horizontalPadding: 20,
+        theme: .system,
+        layoutMode: .scroll
     )
 
     func clamped() -> ReaderSettings {
@@ -58,7 +75,8 @@ struct ReaderSettings: Equatable {
                 max(horizontalPadding, Self.horizontalPaddingRange.lowerBound),
                 Self.horizontalPaddingRange.upperBound
             ),
-            theme: theme
+            theme: theme,
+            layoutMode: layoutMode
         )
     }
 }

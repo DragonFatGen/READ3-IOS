@@ -5,6 +5,7 @@ struct AppDependencies {
     let sourceStore: BookSourceStore
     let libraryRepository: LibraryRepository
     let readerSettingsStore: ReaderSettingsStore
+    let readerPaginator: any ReaderPaginating
     let searchService: any BookSearching
     let bookInfoService: any BookInfoLoading
     let tocService: any TOCLoading
@@ -34,6 +35,7 @@ struct AppDependencies {
             sourceStore: BookSourceStore(),
             libraryRepository: LibraryRepository(),
             readerSettingsStore: ReaderSettingsStore(),
+            readerPaginator: TextKitReaderPaginator(),
             searchService: LegadoSearchService(
                 runtime: BookSourceSearchRuntime(
                     httpClient: httpClient,

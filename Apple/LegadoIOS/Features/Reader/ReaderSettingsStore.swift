@@ -20,7 +20,9 @@ final class ReaderSettingsStore: ObservableObject {
             horizontalPadding: defaults.object(forKey: "\(keyPrefix).horizontalPadding") == nil
                 ? fallback.horizontalPadding : defaults.double(forKey: "\(keyPrefix).horizontalPadding"),
             theme: defaults.string(forKey: "\(keyPrefix).theme").flatMap(ReaderTheme.init(rawValue:))
-                ?? fallback.theme
+                ?? fallback.theme,
+            layoutMode: defaults.string(forKey: "\(keyPrefix).layoutMode")
+                .flatMap(ReaderLayoutMode.init(rawValue:)) ?? fallback.layoutMode
         ).clamped()
     }
 
@@ -41,11 +43,14 @@ final class ReaderSettingsStore: ObservableObject {
 
     func selectTheme(_ theme: ReaderTheme) { settings.theme = theme }
 
+    func selectLayoutMode(_ mode: ReaderLayoutMode) { settings.layoutMode = mode }
+
     private func persist() {
         let value = settings.clamped()
         defaults.set(value.fontSize, forKey: "\(keyPrefix).fontSize")
         defaults.set(value.lineSpacing, forKey: "\(keyPrefix).lineSpacing")
         defaults.set(value.horizontalPadding, forKey: "\(keyPrefix).horizontalPadding")
         defaults.set(value.theme.rawValue, forKey: "\(keyPrefix).theme")
+        defaults.set(value.layoutMode.rawValue, forKey: "\(keyPrefix).layoutMode")
     }
 }

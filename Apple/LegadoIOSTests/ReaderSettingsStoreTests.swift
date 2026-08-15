@@ -7,6 +7,7 @@ final class ReaderSettingsStoreTests: XCTestCase {
         let defaults = isolatedDefaults()
         let store = ReaderSettingsStore(defaults: defaults, keyPrefix: "settings")
         XCTAssertEqual(store.settings, .default)
+        XCTAssertEqual(store.settings.layoutMode, .scroll)
     }
 
     func testPersistsAcrossStoreInstances() {
@@ -16,9 +17,11 @@ final class ReaderSettingsStoreTests: XCTestCase {
         first.adjustLineSpacing(by: 2)
         first.adjustHorizontalPadding(by: 4)
         first.selectTheme(.sepia)
+        first.selectLayoutMode(.paged)
 
         let restored = ReaderSettingsStore(defaults: defaults, keyPrefix: "settings")
         XCTAssertEqual(restored.settings, first.settings)
+        XCTAssertEqual(restored.settings.layoutMode, .paged)
     }
 
     func testRangesAreClamped() {
