@@ -299,10 +299,71 @@ final class ReaderViewModelTests: XCTestCase {
         XCTAssertTrue(requests.isEmpty)
     }
 
+    func testBookmarkToggleAllowsDistinctPositionsAndRemovesNearbyMatch() async {
+        let bookmarks = MemoryBookmarkStore()
+        let model = makeModel(
+            service: RecordingContentService(), store: MemoryProgressStore(),
+            bookmarkStore: bookmarks
+        )
+        model.loadInitialChapter()
+        await waitUntil { model.content != nil }
+        model.updateProgress(0.2)
+        model.toggleBookmark()
+        model.updateProgress(0.7)
+        model.toggleBookmark()
+        XCTAssertEqual(model.bookmarks.count, 2)
+        model.updateProgress(0.705)
+        XCTAssertTrue(model.isCurrentPositionBookmarked)
+        model.toggleBookmark()
+        XCTAssertEqual(model.bookmarks.count, 1)
+    }
+
+    func testPagedBookmarkJumpAndSliderMapNormalizedProgress() async {
+        let bookmarks = MemoryBookmarkStore()
+        let model = makeModel(
+            service: RecordingContentService(), store: MemoryProgressStore(),
+            bookmarkStore: bookmarks,
+            paginator: FakeReaderPaginator(pageCount: 5), layoutMode: .paged
+        )
+        model.updatePaginationConfiguration(testConfiguration())
+        model.loadInitialChapter()
+        await waitUntil { model.pages.count == 5 }
+        model.seek(to: 0.75)
+        XCTAssertEqual(model.currentPageIndex, 3)
+        XCTAssertEqual(model.currentNormalizedProgress, 0.75)
+
+        let bookmark = testBookmark(chapter: 2, progress: 0.5)
+        bookmarks.add(bookmark)
+        model.goToBookmark(bookmark)
+        await waitUntil { model.currentChapterIndex == 2 && model.pages.count == 5 }
+        XCTAssertEqual(model.currentPageIndex, 2)
+    }
+
+    func testScrollBookmarkJumpRestoresProgressAndClampsSlider() async {
+        let bookmarks = MemoryBookmarkStore()
+        let model = makeModel(
+            service: RecordingContentService(), store: MemoryProgressStore(),
+            bookmarkStore: bookmarks
+        )
+        model.loadInitialChapter()
+        await waitUntil { model.content != nil }
+        model.seek(to: 2)
+        XCTAssertEqual(model.currentNormalizedProgress, 1)
+        XCTAssertEqual(model.consumeRestorationProgress(), 1)
+
+        let bookmark = testBookmark(chapter: 1, progress: 0.35)
+        bookmarks.add(bookmark)
+        model.goToBookmark(bookmark)
+        await waitUntil { model.currentChapterIndex == 1 && model.content != nil }
+        XCTAssertEqual(model.currentNormalizedProgress, 0.35)
+        XCTAssertEqual(model.consumeRestorationProgress(), 0.35)
+    }
+
     private func makeModel(
         initialIndex: Int = 0,
         service: any ChapterContentLoading,
         store: MemoryProgressStore,
+        bookmarkStore: (any BookmarkStoring)? = nil,
         paginator: any ReaderPaginating = FakeReaderPaginator(pageCount: 3),
         layoutMode: ReaderLayoutMode = .scroll
     ) -> ReaderViewModel {
@@ -310,7 +371,18 @@ final class ReaderViewModelTests: XCTestCase {
             source: testSource(), book: testBookInfo(), libraryBookID: "book",
             chapters: (0..<3).map(testChapter), initialChapterIndex: initialIndex,
             contentService: service, progressStore: store,
+            bookmarkStore: bookmarkStore,
             paginator: paginator, layoutMode: layoutMode
+        )
+    }
+
+    private func testBookmark(chapter: Int, progress: Double) -> ReaderBookmark {
+        ReaderBookmark(
+            id: UUID(), bookID: "book", sourceIdentity: testSource().bookSourceUrl,
+            bookIdentity: testBookInfo().bookURL, chapterIndex: chapter,
+            chapterURL: testChapter(index: chapter).url,
+            chapterName: testChapter(index: chapter).name,
+            chapterProgress: progress, previewText: "preview", createdAt: Date()
         )
     }
 
@@ -387,6 +459,19 @@ private final class MemoryProgressStore: ReadingProgressStoring {
         value = progress
         history.append(progress)
     }
+}
+
+@MainActor
+private final class MemoryBookmarkStore: BookmarkStoring {
+    private var values: [ReaderBookmark] = []
+    func bookmarks(for bookID: String) -> [ReaderBookmark] {
+        values.filter { $0.bookID == bookID }.sorted {
+            ($0.chapterIndex, $0.chapterProgress) < ($1.chapterIndex, $1.chapterProgress)
+        }
+    }
+    func add(_ bookmark: ReaderBookmark) { values.append(bookmark) }
+    func remove(id: UUID) { values.removeAll { $0.id == id } }
+    func removeAll(for bookID: String) { values.removeAll { $0.bookID == bookID } }
 }
 
 private actor RecordingContentService: ChapterContentLoading {

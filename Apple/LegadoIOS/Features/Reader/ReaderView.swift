@@ -9,7 +9,10 @@ struct ReaderView: View {
     @State private var controlsVisible = true
     @State private var showsTOC = false
     @State private var showsSettings = false
+    @State private var showsBookmarks = false
     @State private var scrollMetrics = ReaderScrollMetrics.zero
+    @State private var sliderProgress = 0.0
+    @State private var isEditingProgress = false
 
     init(
         source: BookSource,
@@ -19,6 +22,7 @@ struct ReaderView: View {
         initialChapterIndex: Int,
         contentService: any ChapterContentLoading,
         progressStore: any ReadingProgressStoring,
+        bookmarkStore: any BookmarkStoring,
         settingsStore: ReaderSettingsStore,
         paginator: any ReaderPaginating
     ) {
@@ -31,6 +35,7 @@ struct ReaderView: View {
             initialChapterIndex: initialChapterIndex,
             contentService: contentService,
             progressStore: progressStore,
+            bookmarkStore: bookmarkStore,
             paginator: paginator,
             layoutMode: settingsStore.settings.layoutMode
         ))
@@ -64,7 +69,18 @@ struct ReaderView: View {
                 .sheet(isPresented: $showsSettings) {
                     ReaderSettingsSheet(store: settingsStore)
                 }
+                .sheet(isPresented: $showsBookmarks) {
+                    ReaderBookmarksSheet(
+                        bookmarks: viewModel.bookmarks,
+                        onSelect: { bookmark in
+                            showsBookmarks = false
+                            viewModel.goToBookmark(bookmark)
+                        },
+                        onDelete: viewModel.removeBookmark
+                    )
+                }
                 .onAppear {
+                    sliderProgress = viewModel.chapterProgress
                     viewModel.setLayoutMode(settingsStore.settings.layoutMode)
                     viewModel.updatePaginationConfiguration(configuration)
                 }
@@ -84,6 +100,9 @@ struct ReaderView: View {
                 .onChange(of: scrollMetrics) { metrics in
                     guard viewModel.layoutMode == .scroll, viewModel.content != nil else { return }
                     viewModel.updateProgress(metrics.progress)
+                }
+                .onChange(of: viewModel.chapterProgress) { progress in
+                    if !isEditingProgress { sliderProgress = progress }
                 }
             }
         }
@@ -225,42 +244,72 @@ struct ReaderView: View {
                 Text(viewModel.currentChapter?.name ?? "").font(.caption).lineLimit(1)
             }
             Spacer()
-            Button { viewModel.reloadCurrentChapter() } label: {
-                Label("重新加载本章", systemImage: "arrow.clockwise").labelStyle(.iconOnly)
+            Button { viewModel.toggleBookmark() } label: {
+                Label(
+                    viewModel.isCurrentPositionBookmarked ? "删除当前位置书签" : "添加当前位置书签",
+                    systemImage: viewModel.isCurrentPositionBookmarked ? "bookmark.fill" : "bookmark"
+                ).labelStyle(.iconOnly)
             }
-            .disabled(viewModel.isLoading)
-            .accessibilityLabel("重新加载本章")
-            Button { showsSettings = true } label: {
-                Label("阅读设置", systemImage: "textformat.size").labelStyle(.iconOnly)
+            .accessibilityLabel(viewModel.isCurrentPositionBookmarked ? "删除当前位置书签" : "添加当前位置书签")
+            Menu {
+                Button { showsTOC = true } label: { Label("目录", systemImage: "list.bullet") }
+                Button { showsBookmarks = true } label: { Label("书签列表", systemImage: "bookmark.square") }
+                Button { showsSettings = true } label: { Label("阅读设置", systemImage: "textformat.size") }
+                Button { viewModel.reloadCurrentChapter() } label: {
+                    Label("重新加载本章", systemImage: "arrow.clockwise")
+                }
+                .disabled(viewModel.isLoading)
+            } label: {
+                Label("更多阅读操作", systemImage: "ellipsis.circle").labelStyle(.iconOnly)
             }
-            .accessibilityLabel("阅读设置")
+            .accessibilityLabel("更多阅读操作")
         }
         .padding(.horizontal)
-        .frame(minHeight: ReaderLayoutMetrics.controlBarHeight)
+        .frame(minHeight: ReaderLayoutMetrics.topControlBarHeight)
         .foregroundStyle(settingsStore.settings.theme.foregroundColor)
         .background(.ultraThinMaterial)
     }
 
     private var bottomControls: some View {
-        HStack {
-            controlButton("上一章", icon: "chevron.left", action: viewModel.goToPreviousChapter)
-                .disabled(!viewModel.previousChapterAvailable)
-            Spacer()
-            controlButton("目录", icon: "list.bullet") { showsTOC = true }
-            Spacer()
-            if let page = viewModel.pageProgressText {
-                Text(page).accessibilityLabel("本章页码")
-            } else {
-                Text(viewModel.chapterProgress, format: .percent.precision(.fractionLength(0)))
+        VStack(spacing: 6) {
+            HStack(spacing: 10) {
+                Slider(
+                    value: Binding<Double>(
+                        get: { sliderProgress },
+                        set: { sliderProgress = min(max($0, 0), 1) }
+                    ),
+                    in: 0...1,
+                    onEditingChanged: { editing in
+                        isEditingProgress = editing
+                        if !editing { viewModel.seek(to: sliderProgress) }
+                    }
+                )
+                .accessibilityLabel("本章进度快速定位")
+                Text(sliderProgress, format: .percent.precision(.fractionLength(0)))
+                    .frame(minWidth: 36, alignment: .trailing)
                     .accessibilityLabel("本章阅读进度")
             }
-            Spacer()
-            controlButton("下一章", icon: "chevron.right", action: viewModel.goToNextChapter)
-                .disabled(!viewModel.nextChapterAvailable)
+            HStack {
+                controlButton("上一章", icon: "chevron.left", action: viewModel.goToPreviousChapter)
+                    .disabled(!viewModel.previousChapterAvailable)
+                Spacer()
+                controlButton("目录", icon: "list.bullet") { showsTOC = true }
+                Spacer()
+                if let page = viewModel.pageProgressText {
+                    Text(page).accessibilityLabel("本章页码")
+                } else {
+                    Text(viewModel.currentChapter?.name ?? "").lineLimit(1)
+                }
+                Spacer()
+                controlButton("书签列表", icon: "bookmark.square") { showsBookmarks = true }
+                Spacer()
+                controlButton("下一章", icon: "chevron.right", action: viewModel.goToNextChapter)
+                    .disabled(!viewModel.nextChapterAvailable)
+            }
         }
         .font(.caption.monospacedDigit())
         .padding(.horizontal)
-        .frame(minHeight: ReaderLayoutMetrics.controlBarHeight)
+        .frame(minHeight: ReaderLayoutMetrics.bottomControlBarHeight)
         .foregroundStyle(settingsStore.settings.theme.foregroundColor)
         .background(.ultraThinMaterial)
     }
@@ -349,7 +398,8 @@ struct ReaderView: View {
 }
 
 private enum ReaderLayoutMetrics {
-    static let controlBarHeight: CGFloat = 52
+    static let topControlBarHeight: CGFloat = 52
+    static let bottomControlBarHeight: CGFloat = 94
     static let pageVerticalPadding: CGFloat = 20
     static let sideTapRatio: CGFloat = 0.30
     static let swipeThreshold: CGFloat = 40
@@ -364,7 +414,8 @@ private struct ReaderViewport {
             width: max(containerSize.width - safeAreaInsets.leading - safeAreaInsets.trailing, 1),
             height: max(
                 containerSize.height - safeAreaInsets.top - safeAreaInsets.bottom
-                    - ReaderLayoutMetrics.controlBarHeight * 2,
+                    - ReaderLayoutMetrics.topControlBarHeight
+                    - ReaderLayoutMetrics.bottomControlBarHeight,
                 1
             )
         )
@@ -373,7 +424,7 @@ private struct ReaderViewport {
     var center: CGPoint {
         CGPoint(
             x: safeAreaInsets.leading + contentSize.width / 2,
-            y: safeAreaInsets.top + ReaderLayoutMetrics.controlBarHeight + contentSize.height / 2
+            y: safeAreaInsets.top + ReaderLayoutMetrics.topControlBarHeight + contentSize.height / 2
         )
     }
 }

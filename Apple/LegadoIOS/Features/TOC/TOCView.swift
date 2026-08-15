@@ -50,6 +50,7 @@ struct TOCView: View {
                                 }) ?? 0,
                                 contentService: dependencies.contentService,
                                 progressStore: dependencies.libraryRepository,
+                                bookmarkStore: dependencies.bookmarkRepository,
                                 settingsStore: dependencies.readerSettingsStore,
                                 paginator: dependencies.readerPaginator
                             )

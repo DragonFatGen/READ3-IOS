@@ -5,6 +5,7 @@ struct AppDependencies {
     let sourceStore: BookSourceStore
     let libraryRepository: LibraryRepository
     let readerSettingsStore: ReaderSettingsStore
+    let bookmarkRepository: BookmarkRepository
     let readerPaginator: any ReaderPaginating
     let searchService: any BookSearching
     let bookInfoService: any BookInfoLoading
@@ -35,6 +36,7 @@ struct AppDependencies {
             sourceStore: BookSourceStore(),
             libraryRepository: LibraryRepository(),
             readerSettingsStore: ReaderSettingsStore(),
+            bookmarkRepository: BookmarkRepository(),
             readerPaginator: TextKitReaderPaginator(),
             searchService: LegadoSearchService(
                 runtime: BookSourceSearchRuntime(
@@ -65,6 +67,7 @@ struct AppDependencies {
     @MainActor
     func removeFromLibrary(_ book: LibraryBook) {
         libraryRepository.remove(bookID: book.id)
+        bookmarkRepository.removeAll(for: book.id)
         let cache = chapterContentCache
         Task {
             await cache.removeAll(for: ChapterCacheBookKey(

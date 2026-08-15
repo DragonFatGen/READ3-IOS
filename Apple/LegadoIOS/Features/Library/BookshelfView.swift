@@ -78,6 +78,7 @@ private struct ContinueReadingView: View {
                     initialChapterIndex: initialIndex,
                     contentService: dependencies.contentService,
                     progressStore: dependencies.libraryRepository,
+                    bookmarkStore: dependencies.bookmarkRepository,
                     settingsStore: dependencies.readerSettingsStore,
                     paginator: dependencies.readerPaginator
                 )

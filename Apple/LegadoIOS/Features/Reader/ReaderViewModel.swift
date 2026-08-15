@@ -15,6 +15,7 @@ final class ReaderViewModel: ObservableObject {
     @Published private(set) var currentPageIndex = 0
     @Published private(set) var isPaginating = false
     @Published private(set) var scrollRestorationID = 0
+    @Published private(set) var bookmarks: [ReaderBookmark] = []
 
     let source: BookSource
     let book: BookInfoResult
@@ -24,6 +25,7 @@ final class ReaderViewModel: ObservableObject {
     private let contentService: any ChapterContentLoading
     private let paginator: any ReaderPaginating
     private weak var progressStore: (any ReadingProgressStoring)?
+    private weak var bookmarkStore: (any BookmarkStoring)?
     private var loadTask: Task<Void, Never>?
     private var preloadTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
@@ -41,6 +43,7 @@ final class ReaderViewModel: ObservableObject {
         initialChapterIndex: Int,
         contentService: any ChapterContentLoading,
         progressStore: any ReadingProgressStoring,
+        bookmarkStore: (any BookmarkStoring)? = nil,
         paginator: any ReaderPaginating = TextKitReaderPaginator(),
         layoutMode: ReaderLayoutMode = .scroll
     ) {
@@ -50,6 +53,7 @@ final class ReaderViewModel: ObservableObject {
         self.chapters = chapters
         self.contentService = contentService
         self.progressStore = progressStore
+        self.bookmarkStore = bookmarkStore
         self.paginator = paginator
         self.layoutMode = layoutMode
         currentChapterIndex = min(max(initialChapterIndex, 0), max(chapters.count - 1, 0))
@@ -58,6 +62,7 @@ final class ReaderViewModel: ObservableObject {
             chapterProgress = saved.normalizedChapterProgress
             restorationProgress = saved.normalizedChapterProgress
         }
+        bookmarks = bookmarkStore?.bookmarks(for: libraryBookID) ?? []
     }
 
     deinit {
@@ -70,6 +75,8 @@ final class ReaderViewModel: ObservableObject {
     var currentChapter: BookChapterResult? { chapters[safe: currentChapterIndex] }
     var previousChapterAvailable: Bool { currentChapterIndex > 0 }
     var nextChapterAvailable: Bool { currentChapterIndex + 1 < chapters.count }
+    var currentNormalizedProgress: Double { chapterProgress }
+    var isCurrentPositionBookmarked: Bool { matchingCurrentBookmark() != nil }
     var pageProgressText: String? {
         guard layoutMode == .paged, !pages.isEmpty else { return nil }
         return "\(currentPageIndex + 1) / \(pages.count)"
@@ -152,6 +159,64 @@ final class ReaderViewModel: ObservableObject {
         scheduleProgressSave()
     }
 
+    func seek(to progress: Double) {
+        let target = min(max(progress, 0), 1)
+        chapterProgress = target
+        if layoutMode == .paged, !pages.isEmpty {
+            let lastIndex = max(pages.count - 1, 0)
+            currentPageIndex = min(max(Int((target * Double(lastIndex)).rounded()), 0), lastIndex)
+            updateProgressFromCurrentPage()
+        } else {
+            restorationProgress = target
+            scrollRestorationID += 1
+        }
+        saveProgressNow()
+    }
+
+    func toggleBookmark() {
+        guard let chapter = currentChapter, let store = bookmarkStore else { return }
+        if let existing = matchingCurrentBookmark() {
+            store.remove(id: existing.id)
+        } else {
+            store.add(ReaderBookmark(
+                id: UUID(),
+                bookID: libraryBookID,
+                sourceIdentity: source.bookSourceUrl,
+                bookIdentity: book.bookURL,
+                chapterIndex: currentChapterIndex,
+                chapterURL: chapter.url,
+                chapterName: chapter.name,
+                chapterProgress: chapterProgress,
+                previewText: BookmarkPreviewBuilder.makePreview(
+                    content: content?.content ?? "",
+                    normalizedProgress: chapterProgress
+                ),
+                createdAt: Date()
+            ))
+        }
+        refreshBookmarks()
+    }
+
+    func removeBookmark(id: UUID) {
+        bookmarkStore?.remove(id: id)
+        refreshBookmarks()
+    }
+
+    func goToBookmark(_ bookmark: ReaderBookmark) {
+        guard bookmark.bookID == libraryBookID,
+              chapters.indices.contains(bookmark.chapterIndex) else { return }
+        let progress = min(max(bookmark.chapterProgress, 0), 1)
+        if bookmark.chapterIndex == currentChapterIndex {
+            seek(to: progress)
+        } else {
+            switchChapter(
+                to: bookmark.chapterIndex,
+                entryPosition: .restore,
+                targetProgress: progress
+            )
+        }
+    }
+
     func consumeRestorationProgress() -> Double? {
         defer { restorationProgress = nil }
         return restorationProgress
@@ -169,14 +234,19 @@ final class ReaderViewModel: ObservableObject {
         saveProgressNow()
     }
 
-    private func switchChapter(to index: Int, entryPosition: ChapterEntryPosition) {
+    private func switchChapter(
+        to index: Int,
+        entryPosition: ChapterEntryPosition,
+        targetProgress: Double? = nil
+    ) {
         saveProgressNow()
         loadTask?.cancel()
         preloadTask?.cancel()
         paginationTask?.cancel()
         currentChapterIndex = index
         chapterEntryPosition = entryPosition
-        chapterProgress = entryPosition == .end ? 1 : 0
+        chapterProgress = targetProgress.map { min(max($0, 0), 1) }
+            ?? (entryPosition == .end ? 1 : 0)
         restorationProgress = chapterProgress
         pages = []
         currentPageIndex = 0
@@ -318,6 +388,24 @@ final class ReaderViewModel: ObservableObject {
             ),
             for: libraryBookID
         )
+    }
+
+    private func matchingCurrentBookmark() -> ReaderBookmark? {
+        guard let chapter = currentChapter else { return nil }
+        let chapterBookmarks = bookmarks.filter {
+            $0.chapterURL == chapter.url || $0.chapterIndex == currentChapterIndex
+        }
+        return chapterBookmarks.min { lhs, rhs in
+            abs(lhs.chapterProgress - chapterProgress) < abs(rhs.chapterProgress - chapterProgress)
+        }.flatMap { bookmark in
+            let nearby = abs(bookmark.chapterProgress - chapterProgress)
+                <= ReaderBookmarkMetrics.positionTolerance
+            return nearby ? bookmark : nil
+        }
+    }
+
+    private func refreshBookmarks() {
+        bookmarks = bookmarkStore?.bookmarks(for: libraryBookID) ?? []
     }
 
     private static func matches(_ progress: ReadingProgress, chapter: BookChapterResult?) -> Bool {
