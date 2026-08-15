@@ -12,12 +12,28 @@ protocol TOCLoading: Sendable {
     func loadTOC(source: BookSource, book: BookInfoResult) async throws -> [BookChapterResult]
 }
 
+enum ContentLoadPolicy: Equatable, Sendable {
+    case cacheFirst
+    case reloadIgnoringCache
+}
+
 protocol ChapterContentLoading: Sendable {
     func loadContent(
         source: BookSource,
         book: BookInfoResult,
-        chapter: BookChapterResult
+        chapter: BookChapterResult,
+        policy: ContentLoadPolicy
     ) async throws -> ChapterContentResult
+}
+
+extension ChapterContentLoading {
+    func loadContent(
+        source: BookSource,
+        book: BookInfoResult,
+        chapter: BookChapterResult
+    ) async throws -> ChapterContentResult {
+        try await loadContent(source: source, book: book, chapter: chapter, policy: .cacheFirst)
+    }
 }
 
 struct LegadoSearchService: BookSearching {
@@ -50,8 +66,10 @@ struct LegadoChapterContentService: ChapterContentLoading {
     func loadContent(
         source: BookSource,
         book: BookInfoResult,
-        chapter: BookChapterResult
+        chapter: BookChapterResult,
+        policy: ContentLoadPolicy
     ) async throws -> ChapterContentResult {
-        try await runtime.fetchContent(source: source, book: book, chapter: chapter)
+        _ = policy
+        return try await runtime.fetchContent(source: source, book: book, chapter: chapter)
     }
 }

@@ -39,6 +39,12 @@ final class LibraryRepository: ObservableObject, ReadingProgressStoring {
         books.contains { $0.id == LibraryBook.identifier(sourceURL: sourceURL, bookURL: bookURL) }
     }
 
+    func remove(bookID: String) {
+        books.removeAll { $0.id == bookID }
+        progressByBookID.removeValue(forKey: bookID)
+        persist()
+    }
+
     func progress(for bookID: String) -> ReadingProgress? {
         books.first(where: { $0.id == bookID })?.progress ?? progressByBookID[bookID]
     }

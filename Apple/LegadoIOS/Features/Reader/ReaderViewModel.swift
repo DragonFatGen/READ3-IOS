@@ -19,6 +19,7 @@ final class ReaderViewModel: ObservableObject {
     private let contentService: any ChapterContentLoading
     private weak var progressStore: (any ReadingProgressStoring)?
     private var loadTask: Task<Void, Never>?
+    private var preloadTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
     private var requestID = UUID()
 
@@ -47,6 +48,7 @@ final class ReaderViewModel: ObservableObject {
 
     deinit {
         loadTask?.cancel()
+        preloadTask?.cancel()
         saveTask?.cancel()
     }
 
@@ -60,6 +62,8 @@ final class ReaderViewModel: ObservableObject {
     }
 
     func retry() { loadCurrentChapter() }
+
+    func reloadCurrentChapter() { loadCurrentChapter(policy: .reloadIgnoringCache) }
 
     func goToPreviousChapter() {
         guard previousChapterAvailable else { return }
@@ -93,12 +97,14 @@ final class ReaderViewModel: ObservableObject {
 
     func cancel() {
         loadTask?.cancel()
+        preloadTask?.cancel()
         saveProgressNow()
     }
 
     private func switchChapter(to index: Int) {
         saveProgressNow()
         loadTask?.cancel()
+        preloadTask?.cancel()
         currentChapterIndex = index
         chapterProgress = 0
         restorationProgress = 0
@@ -107,7 +113,7 @@ final class ReaderViewModel: ObservableObject {
         loadCurrentChapter()
     }
 
-    private func loadCurrentChapter() {
+    private func loadCurrentChapter(policy: ContentLoadPolicy = .cacheFirst) {
         guard let chapter = currentChapter else { return }
         loadTask?.cancel()
         let id = UUID()
@@ -119,13 +125,19 @@ final class ReaderViewModel: ObservableObject {
         let service = contentService
         loadTask = Task { [weak self] in
             do {
-                let result = try await service.loadContent(source: source, book: book, chapter: chapter)
+                let result = try await service.loadContent(
+                    source: source,
+                    book: book,
+                    chapter: chapter,
+                    policy: policy
+                )
                 try Task.checkCancellation()
                 guard let self, self.requestID == id,
                       self.currentChapter?.url == chapter.url else { return }
                 self.content = result
                 self.isLoading = false
                 self.persistProgress()
+                self.preloadAdjacentChapters(around: self.currentChapterIndex)
             } catch is CancellationError {
                 guard let self, self.requestID == id else { return }
                 self.isLoading = false
@@ -134,6 +146,26 @@ final class ReaderViewModel: ObservableObject {
                 self.isLoading = false
                 self.errorMessage = UserFacingError.message(
                     for: error, fallback: "无法加载章节正文"
+                )
+            }
+        }
+    }
+
+    private func preloadAdjacentChapters(around index: Int) {
+        preloadTask?.cancel()
+        let candidates = [index + 1, index - 1].compactMap { chapters[safe: $0] }
+        guard !candidates.isEmpty else { return }
+        let source = source
+        let book = book
+        let service = contentService
+        preloadTask = Task(priority: .utility) {
+            for chapter in candidates {
+                guard !Task.isCancelled else { return }
+                _ = try? await service.loadContent(
+                    source: source,
+                    book: book,
+                    chapter: chapter,
+                    policy: .cacheFirst
                 )
             }
         }

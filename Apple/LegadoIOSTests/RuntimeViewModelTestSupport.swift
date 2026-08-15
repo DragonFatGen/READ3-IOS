@@ -73,8 +73,10 @@ struct FakeContentService: ChapterContentLoading {
     func loadContent(
         source: BookSource,
         book: BookInfoResult,
-        chapter: BookChapterResult
+        chapter: BookChapterResult,
+        policy: ContentLoadPolicy
     ) async throws -> ChapterContentResult {
+        _ = policy
         if delay > .zero { try await Task.sleep(for: delay) }
         return try result.get()
     }

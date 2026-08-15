@@ -83,6 +83,28 @@ final class ReaderViewModelTests: XCTestCase {
         XCTAssertNil(model.errorMessage)
     }
 
+    func testSuccessfulLoadPreloadsNextThenPreviousChapter() async {
+        let service = RecordingContentService()
+        let model = makeModel(initialIndex: 1, service: service, store: MemoryProgressStore())
+        model.loadInitialChapter()
+        await waitUntil { model.content != nil }
+        for _ in 0..<200 {
+            if await service.requestedIndices.count >= 3 { break }
+            try? await Task.sleep(for: .milliseconds(2))
+        }
+        let requested = await service.requestedIndices
+        XCTAssertEqual(Array(requested.prefix(3)), [1, 2, 0])
+    }
+
+    func testReloadUsesIgnoringCachePolicy() async {
+        let service = RecordingContentService()
+        let model = makeModel(service: service, store: MemoryProgressStore())
+        model.reloadCurrentChapter()
+        await waitUntil { model.content != nil }
+        let policies = await service.requestedPolicies
+        XCTAssertEqual(policies.first, .reloadIgnoringCache)
+    }
+
     private func makeModel(
         initialIndex: Int = 0,
         service: RecordingContentService,
@@ -121,6 +143,8 @@ private final class MemoryProgressStore: ReadingProgressStoring {
 private actor RecordingContentService: ChapterContentLoading {
     private var remainingFailures: Int
     private let delays: [Int: Duration]
+    private(set) var requestedIndices: [Int] = []
+    private(set) var requestedPolicies: [ContentLoadPolicy] = []
 
     init(failuresBeforeSuccess: Int = 0, delays: [Int: Duration] = [:]) {
         remainingFailures = failuresBeforeSuccess
@@ -130,8 +154,11 @@ private actor RecordingContentService: ChapterContentLoading {
     func loadContent(
         source: BookSource,
         book: BookInfoResult,
-        chapter: BookChapterResult
+        chapter: BookChapterResult,
+        policy: ContentLoadPolicy
     ) async throws -> ChapterContentResult {
+        requestedIndices.append(chapter.index)
+        requestedPolicies.append(policy)
         if let delay = delays[chapter.index] { try await Task.sleep(for: delay) }
         if remainingFailures > 0 {
             remainingFailures -= 1

@@ -9,36 +9,49 @@ struct BookshelfView: View {
             if repository.books.isEmpty {
                 StatusView(title: "书架为空", message: "在书籍详情页将书籍加入书架")
             } else {
-                List(repository.books) { book in
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack(alignment: .top, spacing: 12) {
-                            CoverImage(urlString: book.coverURL, width: 56, height: 76)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(book.name).font(.headline)
-                                Text(book.author).font(.subheadline).foregroundStyle(.secondary)
-                                if let progress = book.progress {
-                                    Text(progress.lastChapterName).font(.caption).lineLimit(1)
-                                    if let overall = progress.overallProgress {
-                                        ProgressView(value: overall)
-                                            .accessibilityLabel("全书阅读进度")
+                List {
+                    ForEach(repository.books) { book in
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack(alignment: .top, spacing: 12) {
+                                CoverImage(urlString: book.coverURL, width: 56, height: 76)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(book.name).font(.headline)
+                                    Text(book.author).font(.subheadline).foregroundStyle(.secondary)
+                                    if let progress = book.progress {
+                                        Text(progress.lastChapterName).font(.caption).lineLimit(1)
+                                        if let overall = progress.overallProgress {
+                                            ProgressView(value: overall)
+                                                .accessibilityLabel("全书阅读进度")
+                                        }
                                     }
                                 }
                             }
-                        }
-                        NavigationLink {
-                            ContinueReadingView(book: book, dependencies: dependencies)
-                        } label: {
-                            Label(book.progress == nil ? "开始阅读" : "继续阅读", systemImage: "book.pages")
+                            NavigationLink {
+                                ContinueReadingView(book: book, dependencies: dependencies)
+                            } label: {
+                                Label(
+                                    book.progress == nil ? "开始阅读" : "继续阅读",
+                                    systemImage: "book.pages"
+                                )
                                 .frame(maxWidth: .infinity)
+                            }
+                            .buttonStyle(.borderedProminent)
                         }
-                        .buttonStyle(.borderedProminent)
+                        .padding(.vertical, 5)
                     }
-                    .padding(.vertical, 5)
+                    .onDelete { offsets in
+                        let books = offsets.compactMap { repository.books[safe: $0] }
+                        books.forEach { dependencies.removeFromLibrary($0) }
+                    }
                 }
             }
         }
         .navigationTitle("书架")
     }
+}
+
+private extension Collection {
+    subscript(safe index: Index) -> Element? { indices.contains(index) ? self[index] : nil }
 }
 
 private struct ContinueReadingView: View {

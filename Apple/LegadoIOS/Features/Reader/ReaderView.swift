@@ -164,6 +164,12 @@ struct ReaderView: View {
                 Text(viewModel.currentChapter?.name ?? "").font(.caption).lineLimit(1)
             }
             Spacer()
+            Button { viewModel.reloadCurrentChapter() } label: {
+                Label("重新加载本章", systemImage: "arrow.clockwise")
+                    .labelStyle(.iconOnly)
+            }
+            .disabled(viewModel.isLoading)
+            .accessibilityLabel("重新加载本章")
             Button { showsSettings = true } label: {
                 Label("阅读设置", systemImage: "textformat.size")
                     .labelStyle(.iconOnly)

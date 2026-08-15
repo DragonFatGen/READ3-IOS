@@ -1,3 +1,4 @@
+import Foundation
 import LegadoCore
 
 struct AppDependencies {
@@ -7,6 +8,7 @@ struct AppDependencies {
     let searchService: any BookSearching
     let bookInfoService: any BookInfoLoading
     let tocService: any TOCLoading
+    let chapterContentCache: any ChapterContentCache
     let contentService: any ChapterContentLoading
 
     @MainActor
@@ -17,6 +19,17 @@ struct AppDependencies {
         // a single lifecycle change instead of a per-feature change.
         let httpClient = URLSessionHTTPClient()
         let javaScriptExecutor = JavaScriptCoreRuleJavaScriptExecutor()
+        let cacheDirectory = FileManager.default.urls(
+            for: .cachesDirectory,
+            in: .userDomainMask
+        )[0].appendingPathComponent("ChapterContent", isDirectory: true)
+        let chapterContentCache = FileChapterContentCache(directory: cacheDirectory)
+        let productionContentService = LegadoChapterContentService(
+            runtime: BookSourceContentRuntime(
+                httpClient: httpClient,
+                javaScriptExecutor: javaScriptExecutor
+            )
+        )
         return AppDependencies(
             sourceStore: BookSourceStore(),
             libraryRepository: LibraryRepository(),
@@ -39,12 +52,23 @@ struct AppDependencies {
                     javaScriptExecutor: javaScriptExecutor
                 )
             ),
-            contentService: LegadoChapterContentService(
-                runtime: BookSourceContentRuntime(
-                    httpClient: httpClient,
-                    javaScriptExecutor: javaScriptExecutor
-                )
+            chapterContentCache: chapterContentCache,
+            contentService: CachedContentService(
+                cache: chapterContentCache,
+                upstream: productionContentService
             )
         )
+    }
+
+    @MainActor
+    func removeFromLibrary(_ book: LibraryBook) {
+        libraryRepository.remove(bookID: book.id)
+        let cache = chapterContentCache
+        Task {
+            await cache.removeAll(for: ChapterCacheBookKey(
+                sourceIdentity: book.sourceURL,
+                bookIdentity: book.bookURL
+            ))
+        }
     }
 }
