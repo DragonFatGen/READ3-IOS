@@ -37,11 +37,20 @@ struct TOCView: View {
                         ChapterRow(chapter: chapter)
                     } else {
                         NavigationLink {
-                            ChapterContentView(
+                            ReaderView(
                                 source: source,
-                                bookInfo: bookInfo,
-                                chapter: chapter,
-                                service: dependencies.contentService
+                                book: bookInfo,
+                                libraryBookID: LibraryBook.identifier(
+                                    sourceURL: source.bookSourceUrl,
+                                    bookURL: bookInfo.bookURL
+                                ),
+                                chapters: viewModel.chapters,
+                                initialChapterIndex: viewModel.chapters.firstIndex(where: {
+                                    $0.url == chapter.url
+                                }) ?? 0,
+                                contentService: dependencies.contentService,
+                                progressStore: dependencies.libraryRepository,
+                                settingsStore: dependencies.readerSettingsStore
                             )
                         } label: {
                             ChapterRow(chapter: chapter)

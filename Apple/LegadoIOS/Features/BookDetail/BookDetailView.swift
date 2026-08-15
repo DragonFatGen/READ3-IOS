@@ -5,12 +5,14 @@ import SwiftUI
 struct BookDetailView: View {
     let source: BookSource
     let dependencies: AppDependencies
+    @ObservedObject private var libraryRepository: LibraryRepository
     @StateObject private var viewModel: BookDetailViewModel
     @State private var reloadID = 0
 
     init(source: BookSource, searchResult: BookSearchResult, dependencies: AppDependencies) {
         self.source = source
         self.dependencies = dependencies
+        _libraryRepository = ObservedObject(wrappedValue: dependencies.libraryRepository)
         _viewModel = StateObject(wrappedValue: BookDetailViewModel(
             source: source,
             searchResult: searchResult,
@@ -59,6 +61,19 @@ struct BookDetailView: View {
                                 .frame(maxWidth: .infinity)
                         }
                         .buttonStyle(.borderedProminent)
+                        Button {
+                            libraryRepository.add(source: source, bookInfo: info)
+                        } label: {
+                            Label(
+                                libraryRepository.contains(
+                                    sourceURL: source.bookSourceUrl,
+                                    bookURL: info.bookURL
+                                ) ? "已在书架" : "加入书架",
+                                systemImage: "books.vertical"
+                            )
+                            .frame(maxWidth: .infinity)
+                        }
+                        .buttonStyle(.bordered)
                     }
                     .padding()
                 }

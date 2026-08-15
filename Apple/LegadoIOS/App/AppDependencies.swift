@@ -2,6 +2,8 @@ import LegadoCore
 
 struct AppDependencies {
     let sourceStore: BookSourceStore
+    let libraryRepository: LibraryRepository
+    let readerSettingsStore: ReaderSettingsStore
     let searchService: any BookSearching
     let bookInfoService: any BookInfoLoading
     let tocService: any TOCLoading
@@ -17,6 +19,8 @@ struct AppDependencies {
         let javaScriptExecutor = JavaScriptCoreRuleJavaScriptExecutor()
         return AppDependencies(
             sourceStore: BookSourceStore(),
+            libraryRepository: LibraryRepository(),
+            readerSettingsStore: ReaderSettingsStore(),
             searchService: LegadoSearchService(
                 runtime: BookSourceSearchRuntime(
                     httpClient: httpClient,
