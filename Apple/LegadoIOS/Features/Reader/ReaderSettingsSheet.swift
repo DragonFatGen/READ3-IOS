@@ -32,10 +32,15 @@ struct ReaderSettingsSheet: View {
                     increase: { store.adjustHorizontalPadding(by: 2) }
                 )
                 Section("主题") {
-                    Picker("主题", selection: Binding(
-                        get: { store.settings.theme },
-                        set: store.selectTheme
-                    )) {
+                    Picker(
+                        "主题",
+                        selection: Binding<ReaderTheme>(
+                            get: { store.settings.theme },
+                            set: { theme in
+                                store.selectTheme(theme)
+                            }
+                        )
+                    ) {
                         ForEach(ReaderTheme.allCases, id: \.self) { theme in
                             Text(theme.title).tag(theme)
                         }

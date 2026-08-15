@@ -1,6 +1,6 @@
 import SwiftUI
 
-enum ReaderTheme: String, CaseIterable, Codable, Sendable {
+enum ReaderTheme: String, CaseIterable, Codable, Hashable {
     case system
     case light
     case sepia
@@ -36,7 +36,7 @@ enum ReaderTheme: String, CaseIterable, Codable, Sendable {
     var secondaryColor: Color { foregroundColor.opacity(0.65) }
 }
 
-struct ReaderSettings: Equatable, Sendable {
+struct ReaderSettings: Equatable {
     static let fontSizeRange = 14.0...32.0
     static let lineSpacingRange = 2.0...18.0
     static let horizontalPaddingRange = 12.0...40.0
