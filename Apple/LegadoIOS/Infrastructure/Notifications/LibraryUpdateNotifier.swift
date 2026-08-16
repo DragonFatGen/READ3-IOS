@@ -1,5 +1,5 @@
 import Foundation
-import UserNotifications
+@preconcurrency import UserNotifications
 
 enum LibraryNotificationAuthorizationStatus: Equatable {
     case notDetermined
@@ -63,10 +63,14 @@ final class UserNotificationLibraryUpdateNotifier: LibraryUpdateNotifying {
     func authorizationStatus() async -> LibraryNotificationAuthorizationStatus {
         let settings = await center.notificationSettings()
         switch settings.authorizationStatus {
-        case .authorized, .provisional, .ephemeral: .authorized
-        case .denied: .denied
-        case .notDetermined: .notDetermined
-        @unknown default: .denied
+        case .authorized, .provisional, .ephemeral:
+            return LibraryNotificationAuthorizationStatus.authorized
+        case .denied:
+            return LibraryNotificationAuthorizationStatus.denied
+        case .notDetermined:
+            return LibraryNotificationAuthorizationStatus.notDetermined
+        @unknown default:
+            return LibraryNotificationAuthorizationStatus.denied
         }
     }
 
