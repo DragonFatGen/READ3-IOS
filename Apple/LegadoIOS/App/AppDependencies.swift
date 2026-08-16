@@ -11,6 +11,10 @@ struct AppDependencies {
     let bookInfoService: any BookInfoLoading
     let tocService: any TOCLoading
     let bookUpdateChecker: any BookUpdateChecking
+    let libraryViewModel: LibraryViewModel
+    let libraryUpdateSettingsStore: LibraryUpdateSettingsStore
+    let libraryUpdateNotifier: any LibraryUpdateNotifying
+    let libraryAutoUpdateCoordinator: LibraryAutoUpdateCoordinator
     let chapterContentCache: any ChapterContentCache
     let contentService: any ChapterContentLoading
 
@@ -39,9 +43,25 @@ struct AppDependencies {
                 javaScriptExecutor: javaScriptExecutor
             )
         )
+        let sourceStore = BookSourceStore()
+        let libraryRepository = LibraryRepository()
+        let bookUpdateChecker = TOCBookUpdateChecker(tocService: tocService)
+        let libraryViewModel = LibraryViewModel(
+            repository: libraryRepository,
+            sourceStore: sourceStore,
+            checker: bookUpdateChecker
+        )
+        let updateSettingsStore = LibraryUpdateSettingsStore()
+        let updateNotifier = UserNotificationLibraryUpdateNotifier()
+        let updateCoordinator = LibraryAutoUpdateCoordinator(
+            repository: libraryRepository,
+            libraryViewModel: libraryViewModel,
+            settingsStore: updateSettingsStore,
+            notifier: updateNotifier
+        )
         return AppDependencies(
-            sourceStore: BookSourceStore(),
-            libraryRepository: LibraryRepository(),
+            sourceStore: sourceStore,
+            libraryRepository: libraryRepository,
             readerSettingsStore: ReaderSettingsStore(),
             bookmarkRepository: BookmarkRepository(),
             readerPaginator: TextKitReaderPaginator(),
@@ -58,7 +78,11 @@ struct AppDependencies {
                 )
             ),
             tocService: tocService,
-            bookUpdateChecker: TOCBookUpdateChecker(tocService: tocService),
+            bookUpdateChecker: bookUpdateChecker,
+            libraryViewModel: libraryViewModel,
+            libraryUpdateSettingsStore: updateSettingsStore,
+            libraryUpdateNotifier: updateNotifier,
+            libraryAutoUpdateCoordinator: updateCoordinator,
             chapterContentCache: chapterContentCache,
             contentService: CachedContentService(
                 cache: chapterContentCache,

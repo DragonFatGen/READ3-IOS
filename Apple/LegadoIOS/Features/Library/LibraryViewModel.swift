@@ -1,13 +1,31 @@
 import Combine
 import Foundation
 
-struct LibraryRefreshSummary: Equatable {
+struct LibraryRefreshSummary: Equatable, Sendable {
     var succeeded: Int
     var failed: Int
+    var updates: [LibraryBookUpdateNotification]
+
+    init(
+        succeeded: Int,
+        failed: Int,
+        updates: [LibraryBookUpdateNotification] = []
+    ) {
+        self.succeeded = succeeded
+        self.failed = failed
+        self.updates = updates
+    }
+
+    var checkedCount: Int { succeeded + failed }
+    var updatedBookCount: Int { updates.count }
+    var newChapterCount: Int { updates.reduce(0) { $0 + $1.newChapterCount } }
+
+    static let empty = LibraryRefreshSummary(succeeded: 0, failed: 0)
 }
 
 private struct LibraryUpdateOutcome: Sendable {
     let bookID: String
+    let bookName: String
     let result: BookUpdateResult?
     let errorMessage: String?
 }
@@ -24,7 +42,8 @@ final class LibraryViewModel: ObservableObject {
     private let sourceStore: BookSourceStore
     private let checker: any BookUpdateChecking
     private var singleTasks: [String: Task<Void, Never>] = [:]
-    private var batchGeneration = UUID()
+    private var refreshAllTask: Task<LibraryRefreshSummary, Never>?
+    private var refreshAllID: UUID?
 
     init(
         repository: LibraryRepository,
@@ -38,6 +57,7 @@ final class LibraryViewModel: ObservableObject {
 
     deinit {
         singleTasks.values.forEach { $0.cancel() }
+        refreshAllTask?.cancel()
     }
 
     func refresh(_ book: LibraryBook) {
@@ -57,16 +77,46 @@ final class LibraryViewModel: ObservableObject {
         guard outcome.result != nil || outcome.errorMessage != nil else { return }
         lastSummary = LibraryRefreshSummary(
             succeeded: outcome.result == nil ? 0 : 1,
-            failed: outcome.errorMessage == nil ? 0 : 1
+            failed: outcome.errorMessage == nil ? 0 : 1,
+            updates: notificationUpdates(for: outcome)
         )
     }
 
-    func refreshAll() async {
-        guard !isRefreshingAll else { return }
+    func refreshAll() async -> LibraryRefreshSummary {
+        if let refreshAllTask {
+            return await withTaskCancellationHandler {
+                await refreshAllTask.value
+            } onCancel: {
+                refreshAllTask.cancel()
+            }
+        }
+        let id = UUID()
+        let task = Task { [weak self] in await self?.performRefreshAll() ?? .empty }
+        refreshAllID = id
+        refreshAllTask = task
+        let summary = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        if refreshAllID == id {
+            refreshAllTask = nil
+            refreshAllID = nil
+        }
+        return summary
+    }
+
+    func cancelRefreshes() {
+        refreshAllTask?.cancel()
+        refreshAllTask = nil
+        refreshAllID = nil
+        singleTasks.values.forEach { $0.cancel() }
+        singleTasks.removeAll()
+    }
+
+    private func performRefreshAll() async -> LibraryRefreshSummary {
         isRefreshingAll = true
         lastSummary = nil
-        let generation = UUID()
-        batchGeneration = generation
         let books = repository.books
         checkingBookIDs.formUnion(books.map(\.id))
         defer {
@@ -74,9 +124,9 @@ final class LibraryViewModel: ObservableObject {
             isRefreshingAll = false
         }
 
-        var summary = LibraryRefreshSummary(succeeded: 0, failed: 0)
+        var summary = LibraryRefreshSummary.empty
         var startIndex = 0
-        while startIndex < books.count, !Task.isCancelled, batchGeneration == generation {
+        while startIndex < books.count, !Task.isCancelled {
             let endIndex = min(startIndex + Self.maximumConcurrentChecks, books.count)
             let batch = Array(books[startIndex..<endIndex])
             await withTaskGroup(of: LibraryUpdateOutcome.self) { group in
@@ -86,30 +136,34 @@ final class LibraryViewModel: ObservableObject {
                     group.addTask {
                         guard let source else {
                             return LibraryUpdateOutcome(
-                                bookID: book.id, result: nil, errorMessage: "书源不可用"
+                                bookID: book.id, bookName: book.name,
+                                result: nil, errorMessage: "书源不可用"
                             )
                         }
                         do {
                             let result = try await checker.checkUpdate(for: book, source: source)
-                            return LibraryUpdateOutcome(bookID: book.id, result: result, errorMessage: nil)
+                            return LibraryUpdateOutcome(
+                                bookID: book.id, bookName: book.name,
+                                result: result, errorMessage: nil
+                            )
                         } catch is CancellationError {
-                            return LibraryUpdateOutcome(bookID: book.id, result: nil, errorMessage: nil)
+                            return LibraryUpdateOutcome(
+                                bookID: book.id, bookName: book.name,
+                                result: nil, errorMessage: nil
+                            )
                         } catch {
                             return LibraryUpdateOutcome(
-                                bookID: book.id,
-                                result: nil,
+                                bookID: book.id, bookName: book.name, result: nil,
                                 errorMessage: Self.updateErrorMessage(error)
                             )
                         }
                     }
                 }
                 while let outcome = await group.next() {
-                    guard !Task.isCancelled, batchGeneration == generation else {
-                        group.cancelAll()
-                        return
-                    }
+                    guard !Task.isCancelled else { group.cancelAll(); return }
                     if outcome.result != nil {
                         summary.succeeded += 1
+                        summary.updates.append(contentsOf: notificationUpdates(for: outcome))
                     } else if outcome.errorMessage != nil {
                         summary.failed += 1
                     }
@@ -119,34 +173,43 @@ final class LibraryViewModel: ObservableObject {
             }
             startIndex = endIndex
         }
-        if !Task.isCancelled, batchGeneration == generation { lastSummary = summary }
-    }
-
-    func cancelRefreshes() {
-        batchGeneration = UUID()
-        singleTasks.values.forEach { $0.cancel() }
-        singleTasks.removeAll()
+        if !Task.isCancelled { lastSummary = summary }
+        return summary
     }
 
     private func check(_ book: LibraryBook) async -> LibraryUpdateOutcome {
         guard let source = sourceStore.source(for: book.source.bookSourceUrl) else {
-            return LibraryUpdateOutcome(bookID: book.id, result: nil, errorMessage: "书源不可用")
+            return LibraryUpdateOutcome(
+                bookID: book.id, bookName: book.name,
+                result: nil, errorMessage: "书源不可用"
+            )
         }
         do {
             return LibraryUpdateOutcome(
-                bookID: book.id,
+                bookID: book.id, bookName: book.name,
                 result: try await checker.checkUpdate(for: book, source: source),
                 errorMessage: nil
             )
         } catch is CancellationError {
-            return LibraryUpdateOutcome(bookID: book.id, result: nil, errorMessage: nil)
+            return LibraryUpdateOutcome(
+                bookID: book.id, bookName: book.name, result: nil, errorMessage: nil
+            )
         } catch {
             return LibraryUpdateOutcome(
-                bookID: book.id,
-                result: nil,
+                bookID: book.id, bookName: book.name, result: nil,
                 errorMessage: Self.updateErrorMessage(error)
             )
         }
+    }
+
+    private func notificationUpdates(for outcome: LibraryUpdateOutcome) -> [LibraryBookUpdateNotification] {
+        guard let result = outcome.result, result.newChapterCount > 0 else { return [] }
+        return [LibraryBookUpdateNotification(
+            bookID: outcome.bookID,
+            bookName: outcome.bookName,
+            newChapterCount: result.newChapterCount,
+            latestChapterName: result.latestChapterName
+        )]
     }
 
     private func apply(_ outcome: LibraryUpdateOutcome) {

@@ -4,17 +4,14 @@ struct BookshelfView: View {
     @ObservedObject var repository: LibraryRepository
     let dependencies: AppDependencies
     @StateObject private var sortPreference = LibrarySortPreference()
-    @StateObject private var viewModel: LibraryViewModel
+    @ObservedObject private var viewModel: LibraryViewModel
     @State private var pendingDeletion: LibraryBook?
+    @State private var showsUpdateSettings = false
 
     init(repository: LibraryRepository, dependencies: AppDependencies) {
         self.repository = repository
         self.dependencies = dependencies
-        _viewModel = StateObject(wrappedValue: LibraryViewModel(
-            repository: repository,
-            sourceStore: dependencies.sourceStore,
-            checker: dependencies.bookUpdateChecker
-        ))
+        viewModel = dependencies.libraryViewModel
     }
 
     private var displayedBooks: [LibraryBook] { repository.books.sorted(by: sortPreference.mode) }
@@ -102,7 +99,7 @@ struct BookshelfView: View {
                         pendingDeletion = offsets.compactMap { displayedBooks[safe: $0] }.first
                     }
                 }
-                .refreshable { await viewModel.refreshAll() }
+                .refreshable { _ = await viewModel.refreshAll() }
             }
         }
         .navigationTitle("书架")
@@ -113,11 +110,24 @@ struct BookshelfView: View {
             }
         }
         .toolbar {
-            Menu {
-                Picker("排序", selection: $sortPreference.mode) {
-                    ForEach(LibrarySortMode.allCases) { mode in Text(mode.title).tag(mode) }
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button { showsUpdateSettings = true } label: {
+                    Label("更新设置", systemImage: "gearshape")
                 }
-            } label: { Label("排序", systemImage: "arrow.up.arrow.down") }
+                Menu {
+                    Picker("排序", selection: $sortPreference.mode) {
+                        ForEach(LibrarySortMode.allCases) { mode in Text(mode.title).tag(mode) }
+                    }
+                } label: { Label("排序", systemImage: "arrow.up.arrow.down") }
+            }
+        }
+        .sheet(isPresented: $showsUpdateSettings) {
+            NavigationStack {
+                LibraryUpdateSettingsView(
+                    store: dependencies.libraryUpdateSettingsStore,
+                    notifier: dependencies.libraryUpdateNotifier
+                )
+            }
         }
         .confirmationDialog(
             "从书架删除《\(pendingDeletion?.name ?? "")》？",
@@ -132,7 +142,6 @@ struct BookshelfView: View {
         } message: {
             Text("阅读进度、章节缓存和书签将同时清除；书源不会被删除。")
         }
-        .onDisappear(perform: viewModel.cancelRefreshes)
     }
 }
 
