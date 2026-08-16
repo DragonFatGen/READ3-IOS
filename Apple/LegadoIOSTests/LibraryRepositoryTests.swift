@@ -74,7 +74,10 @@ final class LibraryRepositoryTests: XCTestCase {
 
         XCTAssertEqual([oldest, newest].sorted(by: .recentlyRead).first?.name, "中文甲")
         XCTAssertEqual([oldest, newest].sorted(by: .recentlyAdded).first?.name, "中文甲")
-        XCTAssertEqual([oldest, newest].sorted(by: .title).first?.name, "中文甲")
+        let expectedTitle = [oldest.name, newest.name].min {
+            $0.localizedStandardCompare($1) == .orderedAscending
+        }
+        XCTAssertEqual([oldest, newest].sorted(by: .title).first?.name, expectedTitle)
         XCTAssertEqual([newest, oldest].sorted(by: .progress).first?.name, "中文乙")
     }
 
