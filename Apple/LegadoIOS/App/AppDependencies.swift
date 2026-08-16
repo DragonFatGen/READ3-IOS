@@ -10,6 +10,7 @@ struct AppDependencies {
     let searchService: any BookSearching
     let bookInfoService: any BookInfoLoading
     let tocService: any TOCLoading
+    let bookUpdateChecker: any BookUpdateChecking
     let chapterContentCache: any ChapterContentCache
     let contentService: any ChapterContentLoading
 
@@ -32,6 +33,12 @@ struct AppDependencies {
                 javaScriptExecutor: javaScriptExecutor
             )
         )
+        let tocService = LegadoTOCService(
+            runtime: BookSourceTOCRuntime(
+                httpClient: httpClient,
+                javaScriptExecutor: javaScriptExecutor
+            )
+        )
         return AppDependencies(
             sourceStore: BookSourceStore(),
             libraryRepository: LibraryRepository(),
@@ -50,12 +57,8 @@ struct AppDependencies {
                     javaScriptExecutor: javaScriptExecutor
                 )
             ),
-            tocService: LegadoTOCService(
-                runtime: BookSourceTOCRuntime(
-                    httpClient: httpClient,
-                    javaScriptExecutor: javaScriptExecutor
-                )
-            ),
+            tocService: tocService,
+            bookUpdateChecker: TOCBookUpdateChecker(tocService: tocService),
             chapterContentCache: chapterContentCache,
             contentService: CachedContentService(
                 cache: chapterContentCache,

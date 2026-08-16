@@ -29,6 +29,12 @@ final class LibraryRepository: ObservableObject, ReadingProgressStoring {
             refreshed.addedAt = books[index].addedAt
             refreshed.lastReadAt = books[index].lastReadAt
             refreshed.progress = books[index].progress ?? progressByBookID[value.id]
+            refreshed.lastCheckedAt = books[index].lastCheckedAt
+            refreshed.lastKnownChapterCount = books[index].lastKnownChapterCount
+            refreshed.lastKnownLatestChapterURL = books[index].lastKnownLatestChapterURL
+            refreshed.lastKnownLatestChapterName = books[index].lastKnownLatestChapterName
+            refreshed.updateCount = books[index].updateCount
+            refreshed.lastUpdateError = books[index].lastUpdateError
             books[index] = refreshed
         } else {
             books.insert(value, at: 0)
@@ -55,12 +61,42 @@ final class LibraryRepository: ObservableObject, ReadingProgressStoring {
         if let index = books.firstIndex(where: { $0.id == bookID }) {
             books[index].progress = progress
             books[index].lastReadAt = progress.lastReadAt
+            Self.markRead(&books[index], chapterIndex: progress.lastChapterIndex)
         }
+        persist()
+    }
+
+    func applyUpdateCheck(bookID: String, result: BookUpdateResult) {
+        guard let index = books.firstIndex(where: { $0.id == bookID }) else { return }
+        books[index].lastCheckedAt = result.checkedAt
+        books[index].lastKnownChapterCount = result.chapterCount
+        books[index].lastKnownLatestChapterURL = result.latestChapterURL
+        books[index].lastKnownLatestChapterName = result.latestChapterName
+        books[index].updateCount = max(books[index].updateCount + result.newChapterCount, 0)
+        books[index].lastUpdateError = nil
+        persist()
+    }
+
+    func recordUpdateFailure(bookID: String, message: String) {
+        guard let index = books.firstIndex(where: { $0.id == bookID }) else { return }
+        books[index].lastUpdateError = message
+        persist()
+    }
+
+    func markRead(bookID: String, chapterIndex: Int) {
+        guard let index = books.firstIndex(where: { $0.id == bookID }) else { return }
+        Self.markRead(&books[index], chapterIndex: chapterIndex)
         persist()
     }
 
     func referenceCount(forSourceIdentity identity: String) -> Int {
         books.filter { $0.source.bookSourceUrl == identity || $0.sourceURL == identity }.count
+    }
+
+    private static func markRead(_ book: inout LibraryBook, chapterIndex: Int) {
+        guard book.updateCount > 0, let chapterCount = book.lastKnownChapterCount else { return }
+        let remainingAfterChapter = max(chapterCount - chapterIndex - 1, 0)
+        book.updateCount = min(book.updateCount, remainingAfterChapter)
     }
 
     private func load() {

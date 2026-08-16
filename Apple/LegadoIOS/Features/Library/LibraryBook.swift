@@ -36,6 +36,14 @@ struct LibraryBook: Codable, Identifiable, Equatable, Sendable {
     var addedAt: Date
     var lastReadAt: Date?
     var progress: ReadingProgress?
+    var lastCheckedAt: Date?
+    var lastKnownChapterCount: Int?
+    var lastKnownLatestChapterURL: String?
+    var lastKnownLatestChapterName: String?
+    var updateCount: Int
+    var lastUpdateError: String?
+
+    var hasUpdate: Bool { updateCount > 0 }
 
     init(source: BookSource, bookInfo: BookInfoResult, addedAt: Date = Date()) {
         id = Self.identifier(sourceURL: source.bookSourceUrl, bookURL: bookInfo.bookURL)
@@ -55,12 +63,20 @@ struct LibraryBook: Codable, Identifiable, Equatable, Sendable {
         sourceOrder = bookInfo.sourceOrder
         self.addedAt = addedAt
         lastReadAt = nil
+        lastCheckedAt = nil
+        lastKnownChapterCount = nil
+        lastKnownLatestChapterURL = nil
+        lastKnownLatestChapterName = nil
+        updateCount = 0
+        lastUpdateError = nil
     }
 
     private enum CodingKeys: String, CodingKey {
         case id, source, name, author, bookURL, coverURL, intro, kind, wordCount
         case lastChapter, tocURL, sourceURL, sourceName, sourceType, sourceOrder
         case addedAt, lastReadAt, progress
+        case lastCheckedAt, lastKnownChapterCount, lastKnownLatestChapterURL
+        case lastKnownLatestChapterName, updateCount, lastUpdateError
     }
 
     init(from decoder: Decoder) throws {
@@ -84,6 +100,16 @@ struct LibraryBook: Codable, Identifiable, Equatable, Sendable {
         progress = try container.decodeIfPresent(ReadingProgress.self, forKey: .progress)
         lastReadAt = try container.decodeIfPresent(Date.self, forKey: .lastReadAt)
             ?? progress?.lastReadAt
+        lastCheckedAt = try container.decodeIfPresent(Date.self, forKey: .lastCheckedAt)
+        lastKnownChapterCount = try container.decodeIfPresent(Int.self, forKey: .lastKnownChapterCount)
+        lastKnownLatestChapterURL = try container.decodeIfPresent(
+            String.self, forKey: .lastKnownLatestChapterURL
+        )
+        lastKnownLatestChapterName = try container.decodeIfPresent(
+            String.self, forKey: .lastKnownLatestChapterName
+        )
+        updateCount = max(try container.decodeIfPresent(Int.self, forKey: .updateCount) ?? 0, 0)
+        lastUpdateError = try container.decodeIfPresent(String.self, forKey: .lastUpdateError)
     }
 
     var bookInfo: BookInfoResult {

@@ -4,7 +4,18 @@ struct BookshelfView: View {
     @ObservedObject var repository: LibraryRepository
     let dependencies: AppDependencies
     @StateObject private var sortPreference = LibrarySortPreference()
+    @StateObject private var viewModel: LibraryViewModel
     @State private var pendingDeletion: LibraryBook?
+
+    init(repository: LibraryRepository, dependencies: AppDependencies) {
+        self.repository = repository
+        self.dependencies = dependencies
+        _viewModel = StateObject(wrappedValue: LibraryViewModel(
+            repository: repository,
+            sourceStore: dependencies.sourceStore,
+            checker: dependencies.bookUpdateChecker
+        ))
+    }
 
     private var displayedBooks: [LibraryBook] { repository.books.sorted(by: sortPreference.mode) }
 
@@ -20,7 +31,17 @@ struct BookshelfView: View {
                                 CoverImage(urlString: book.coverURL, width: 56, height: 76)
                                 VStack(alignment: .leading, spacing: 4) {
                                     Text(book.name).font(.headline)
+                                    if book.hasUpdate {
+                                        Text("\(book.updateCount) 章更新")
+                                            .font(.caption.bold())
+                                            .padding(.horizontal, 7).padding(.vertical, 3)
+                                            .background(.blue.opacity(0.14), in: Capsule())
+                                            .foregroundStyle(.blue)
+                                    }
                                     Text(book.author).font(.subheadline).foregroundStyle(.secondary)
+                                    if let latest = book.lastKnownLatestChapterName, !latest.isEmpty {
+                                        Text("最新：\(latest)").font(.caption).lineLimit(1)
+                                    }
                                     if let progress = book.progress {
                                         Text(progress.lastChapterName).font(.caption).lineLimit(1)
                                         if let overall = progress.overallProgress {
@@ -35,6 +56,19 @@ struct BookshelfView: View {
                                     if let lastReadAt = book.lastReadAt {
                                         Text(lastReadAt, style: .relative)
                                             .font(.caption2).foregroundStyle(.secondary)
+                                    }
+                                    if viewModel.checkingBookIDs.contains(book.id) {
+                                        Label("检查更新中", systemImage: "arrow.triangle.2.circlepath")
+                                            .font(.caption2).foregroundStyle(.secondary)
+                                    } else if book.lastUpdateError != nil {
+                                        Label("更新失败", systemImage: "exclamationmark.circle")
+                                            .font(.caption2).foregroundStyle(.orange)
+                                    } else if let checkedAt = book.lastCheckedAt {
+                                        HStack(spacing: 3) {
+                                            Text("检查于")
+                                            Text(checkedAt, style: .relative)
+                                        }
+                                        .font(.caption2).foregroundStyle(.secondary)
                                     }
                                 }
                             }
@@ -51,16 +85,33 @@ struct BookshelfView: View {
                         }
                         .padding(.vertical, 5)
                         .contextMenu {
+                            Button {
+                                viewModel.refresh(book)
+                            } label: { Label("检查更新", systemImage: "arrow.clockwise") }
+                            .disabled(viewModel.checkingBookIDs.contains(book.id))
                             Button("删除", role: .destructive) { pendingDeletion = book }
+                        }
+                        .swipeActions(edge: .leading) {
+                            Button { viewModel.refresh(book) } label: {
+                                Label("检查更新", systemImage: "arrow.clockwise")
+                            }
+                            .tint(.blue)
                         }
                     }
                     .onDelete { offsets in
                         pendingDeletion = offsets.compactMap { displayedBooks[safe: $0] }.first
                     }
                 }
+                .refreshable { await viewModel.refreshAll() }
             }
         }
         .navigationTitle("书架")
+        .overlay(alignment: .bottom) {
+            if let summary = viewModel.lastSummary {
+                Text("更新成功 \(summary.succeeded) 本，失败 \(summary.failed) 本")
+                    .font(.caption).padding(8).background(.thinMaterial, in: Capsule()).padding()
+            }
+        }
         .toolbar {
             Menu {
                 Picker("排序", selection: $sortPreference.mode) {
@@ -81,6 +132,7 @@ struct BookshelfView: View {
         } message: {
             Text("阅读进度、章节缓存和书签将同时清除；书源不会被删除。")
         }
+        .onDisappear(perform: viewModel.cancelRefreshes)
     }
 }
 
