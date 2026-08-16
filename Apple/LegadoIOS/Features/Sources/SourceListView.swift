@@ -9,13 +9,21 @@ struct SourceListView: View {
 
     var body: some View {
         Group {
-            if sourceStore.sources.isEmpty {
+            if sourceStore.allSources.isEmpty {
                 StatusView(
                     title: "尚未导入书源",
                     message: "导入 Legado 书源 JSON 后开始搜索"
                 )
+            } else if sourceStore.enabledSources.isEmpty {
+                VStack(spacing: 16) {
+                    StatusView(title: "暂无已启用书源", message: "请在书源管理中启用书源")
+                    NavigationLink("进入书源管理") {
+                        BookSourceManagementView(sourceStore: sourceStore, dependencies: dependencies)
+                    }
+                    .buttonStyle(.borderedProminent)
+                }
             } else {
-                List(sourceStore.sources, id: \.bookSourceUrl) { source in
+                List(sourceStore.enabledSources, id: \.bookSourceUrl) { source in
                     NavigationLink {
                         SearchView(source: source, dependencies: dependencies)
                     } label: {
@@ -32,10 +40,15 @@ struct SourceListView: View {
         }
         .navigationTitle("书源")
         .toolbar {
-            Button {
-                isImporting = true
-            } label: {
-                Label("导入", systemImage: "square.and.arrow.down")
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                NavigationLink {
+                    BookSourceManagementView(sourceStore: sourceStore, dependencies: dependencies)
+                } label: { Label("书源管理", systemImage: "slider.horizontal.3") }
+                Button {
+                    isImporting = true
+                } label: {
+                    Label("导入", systemImage: "square.and.arrow.down")
+                }
             }
         }
         .fileImporter(isPresented: $isImporting, allowedContentTypes: [.json]) { result in

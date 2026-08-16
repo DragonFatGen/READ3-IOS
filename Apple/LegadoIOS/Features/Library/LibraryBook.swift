@@ -34,6 +34,7 @@ struct LibraryBook: Codable, Identifiable, Equatable, Sendable {
     var sourceType: Int
     var sourceOrder: Int
     var addedAt: Date
+    var lastReadAt: Date?
     var progress: ReadingProgress?
 
     init(source: BookSource, bookInfo: BookInfoResult, addedAt: Date = Date()) {
@@ -53,6 +54,36 @@ struct LibraryBook: Codable, Identifiable, Equatable, Sendable {
         sourceType = bookInfo.sourceType
         sourceOrder = bookInfo.sourceOrder
         self.addedAt = addedAt
+        lastReadAt = nil
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, source, name, author, bookURL, coverURL, intro, kind, wordCount
+        case lastChapter, tocURL, sourceURL, sourceName, sourceType, sourceOrder
+        case addedAt, lastReadAt, progress
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        source = try container.decode(BookSource.self, forKey: .source)
+        name = try container.decode(String.self, forKey: .name)
+        author = try container.decode(String.self, forKey: .author)
+        bookURL = try container.decode(String.self, forKey: .bookURL)
+        coverURL = try container.decodeIfPresent(String.self, forKey: .coverURL)
+        intro = try container.decodeIfPresent(String.self, forKey: .intro)
+        kind = try container.decodeIfPresent(String.self, forKey: .kind)
+        wordCount = try container.decodeIfPresent(String.self, forKey: .wordCount)
+        lastChapter = try container.decodeIfPresent(String.self, forKey: .lastChapter)
+        tocURL = try container.decode(String.self, forKey: .tocURL)
+        sourceURL = try container.decode(String.self, forKey: .sourceURL)
+        sourceName = try container.decode(String.self, forKey: .sourceName)
+        sourceType = try container.decode(Int.self, forKey: .sourceType)
+        sourceOrder = try container.decode(Int.self, forKey: .sourceOrder)
+        addedAt = try container.decodeIfPresent(Date.self, forKey: .addedAt) ?? .distantPast
+        progress = try container.decodeIfPresent(ReadingProgress.self, forKey: .progress)
+        lastReadAt = try container.decodeIfPresent(Date.self, forKey: .lastReadAt)
+            ?? progress?.lastReadAt
     }
 
     var bookInfo: BookInfoResult {

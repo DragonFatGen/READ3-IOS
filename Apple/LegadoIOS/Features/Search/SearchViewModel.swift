@@ -10,7 +10,7 @@ final class SearchViewModel: ObservableObject {
     @Published private(set) var hasSearched = false
     @Published private(set) var errorMessage: String?
 
-    private let source: BookSource
+    @Published private(set) var source: BookSource?
     private let service: any BookSearching
     private var searchTask: Task<Void, Never>?
     private var requestID: UUID?
@@ -22,16 +22,24 @@ final class SearchViewModel: ObservableObject {
 
     deinit { searchTask?.cancel() }
 
+    func selectSource(_ source: BookSource?) {
+        guard self.source != source else { return }
+        cancelSearch()
+        self.source = source
+        results = []
+        hasSearched = false
+        errorMessage = nil
+    }
+
     func search() {
         let keyword = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !keyword.isEmpty else { return }
+        guard !keyword.isEmpty, let selectedSource = source else { return }
         searchTask?.cancel()
         let id = UUID()
         requestID = id
         isLoading = true
         hasSearched = true
         errorMessage = nil
-        let selectedSource = source
         let searchService = service
         searchTask = Task { [weak self] in
             do {

@@ -27,6 +27,7 @@ final class LibraryRepository: ObservableObject, ReadingProgressStoring {
         if let index = books.firstIndex(where: { $0.id == value.id }) {
             var refreshed = value
             refreshed.addedAt = books[index].addedAt
+            refreshed.lastReadAt = books[index].lastReadAt
             refreshed.progress = books[index].progress ?? progressByBookID[value.id]
             books[index] = refreshed
         } else {
@@ -53,8 +54,13 @@ final class LibraryRepository: ObservableObject, ReadingProgressStoring {
         progressByBookID[bookID] = progress
         if let index = books.firstIndex(where: { $0.id == bookID }) {
             books[index].progress = progress
+            books[index].lastReadAt = progress.lastReadAt
         }
         persist()
+    }
+
+    func referenceCount(forSourceIdentity identity: String) -> Int {
+        books.filter { $0.source.bookSourceUrl == identity || $0.sourceURL == identity }.count
     }
 
     private func load() {

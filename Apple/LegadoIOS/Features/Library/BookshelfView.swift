@@ -3,6 +3,10 @@ import SwiftUI
 struct BookshelfView: View {
     @ObservedObject var repository: LibraryRepository
     let dependencies: AppDependencies
+    @StateObject private var sortPreference = LibrarySortPreference()
+    @State private var pendingDeletion: LibraryBook?
+
+    private var displayedBooks: [LibraryBook] { repository.books.sorted(by: sortPreference.mode) }
 
     var body: some View {
         Group {
@@ -10,7 +14,7 @@ struct BookshelfView: View {
                 StatusView(title: "书架为空", message: "在书籍详情页将书籍加入书架")
             } else {
                 List {
-                    ForEach(repository.books) { book in
+                    ForEach(displayedBooks) { book in
                         VStack(alignment: .leading, spacing: 10) {
                             HStack(alignment: .top, spacing: 12) {
                                 CoverImage(urlString: book.coverURL, width: 56, height: 76)
@@ -22,7 +26,15 @@ struct BookshelfView: View {
                                         if let overall = progress.overallProgress {
                                             ProgressView(value: overall)
                                                 .accessibilityLabel("全书阅读进度")
+                                            Text(overall, format: .percent.precision(.fractionLength(0)))
+                                                .font(.caption).foregroundStyle(.secondary)
                                         }
+                                    } else {
+                                        Text("未开始").font(.caption).foregroundStyle(.secondary)
+                                    }
+                                    if let lastReadAt = book.lastReadAt {
+                                        Text(lastReadAt, style: .relative)
+                                            .font(.caption2).foregroundStyle(.secondary)
                                     }
                                 }
                             }
@@ -38,15 +50,37 @@ struct BookshelfView: View {
                             .buttonStyle(.borderedProminent)
                         }
                         .padding(.vertical, 5)
+                        .contextMenu {
+                            Button("删除", role: .destructive) { pendingDeletion = book }
+                        }
                     }
                     .onDelete { offsets in
-                        let books = offsets.compactMap { repository.books[safe: $0] }
-                        books.forEach { dependencies.removeFromLibrary($0) }
+                        pendingDeletion = offsets.compactMap { displayedBooks[safe: $0] }.first
                     }
                 }
             }
         }
         .navigationTitle("书架")
+        .toolbar {
+            Menu {
+                Picker("排序", selection: $sortPreference.mode) {
+                    ForEach(LibrarySortMode.allCases) { mode in Text(mode.title).tag(mode) }
+                }
+            } label: { Label("排序", systemImage: "arrow.up.arrow.down") }
+        }
+        .confirmationDialog(
+            "从书架删除《\(pendingDeletion?.name ?? "")》？",
+            isPresented: Binding(get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("删除", role: .destructive) {
+                if let book = pendingDeletion { dependencies.removeFromLibrary(book) }
+                pendingDeletion = nil
+            }
+            Button("取消", role: .cancel) { pendingDeletion = nil }
+        } message: {
+            Text("阅读进度、章节缓存和书签将同时清除；书源不会被删除。")
+        }
     }
 }
 
