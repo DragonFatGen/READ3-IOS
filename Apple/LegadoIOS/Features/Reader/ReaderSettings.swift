@@ -12,6 +12,18 @@ enum ReaderLayoutMode: String, CaseIterable, Codable, Hashable {
     }
 }
 
+enum ReaderPageTurnStyle: String, CaseIterable, Codable, Hashable {
+    case none
+    case cover
+
+    var title: String {
+        switch self {
+        case .none: "无动画"
+        case .cover: "覆盖翻页"
+        }
+    }
+}
+
 enum ReaderTheme: String, CaseIterable, Codable, Hashable {
     case system
     case light
@@ -58,13 +70,15 @@ struct ReaderSettings: Equatable {
     var horizontalPadding: Double
     var theme: ReaderTheme
     var layoutMode: ReaderLayoutMode
+    var pageTurnStyle: ReaderPageTurnStyle
 
     static let `default` = ReaderSettings(
         fontSize: 19,
         lineSpacing: 8,
         horizontalPadding: 20,
         theme: .system,
-        layoutMode: .scroll
+        layoutMode: .scroll,
+        pageTurnStyle: .cover
     )
 
     func clamped() -> ReaderSettings {
@@ -76,7 +90,8 @@ struct ReaderSettings: Equatable {
                 Self.horizontalPaddingRange.upperBound
             ),
             theme: theme,
-            layoutMode: layoutMode
+            layoutMode: layoutMode,
+            pageTurnStyle: pageTurnStyle
         )
     }
 }

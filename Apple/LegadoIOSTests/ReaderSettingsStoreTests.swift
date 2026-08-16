@@ -8,6 +8,7 @@ final class ReaderSettingsStoreTests: XCTestCase {
         let store = ReaderSettingsStore(defaults: defaults, keyPrefix: "settings")
         XCTAssertEqual(store.settings, .default)
         XCTAssertEqual(store.settings.layoutMode, .scroll)
+        XCTAssertEqual(store.settings.pageTurnStyle, .cover)
     }
 
     func testPersistsAcrossStoreInstances() {
@@ -18,10 +19,21 @@ final class ReaderSettingsStoreTests: XCTestCase {
         first.adjustHorizontalPadding(by: 4)
         first.selectTheme(.sepia)
         first.selectLayoutMode(.paged)
+        first.selectPageTurnStyle(.none)
 
         let restored = ReaderSettingsStore(defaults: defaults, keyPrefix: "settings")
         XCTAssertEqual(restored.settings, first.settings)
         XCTAssertEqual(restored.settings.layoutMode, .paged)
+        XCTAssertEqual(restored.settings.pageTurnStyle, .none)
+    }
+
+    func testLegacySettingsWithoutPageTurnStyleUsesCoverDefault() {
+        let defaults = isolatedDefaults()
+        defaults.set(ReaderLayoutMode.paged.rawValue, forKey: "settings.layoutMode")
+
+        let store = ReaderSettingsStore(defaults: defaults, keyPrefix: "settings")
+
+        XCTAssertEqual(store.settings.pageTurnStyle, .cover)
     }
 
     func testRangesAreClamped() {

@@ -206,7 +206,7 @@ final class ReaderViewModelTests: XCTestCase {
         XCTAssertEqual(calls, 5)
     }
 
-    func testThemeDoesNotCauseRepagination() async {
+    func testThemeAndPageTurnStyleDoNotCauseRepagination() async {
         let paginator = FakeReaderPaginator(pageCount: 3)
         let model = makeModel(
             service: RecordingContentService(), store: MemoryProgressStore(),
@@ -219,6 +219,7 @@ final class ReaderViewModelTests: XCTestCase {
         let defaults = UserDefaults(suiteName: "ReaderThemeTest.\(UUID().uuidString)")!
         let settings = ReaderSettingsStore(defaults: defaults, keyPrefix: "settings")
         settings.selectTheme(.dark)
+        settings.selectPageTurnStyle(.none)
         let after = await paginator.callCount
         XCTAssertEqual(before, after)
     }

@@ -22,7 +22,9 @@ final class ReaderSettingsStore: ObservableObject {
             theme: defaults.string(forKey: "\(keyPrefix).theme").flatMap(ReaderTheme.init(rawValue:))
                 ?? fallback.theme,
             layoutMode: defaults.string(forKey: "\(keyPrefix).layoutMode")
-                .flatMap(ReaderLayoutMode.init(rawValue:)) ?? fallback.layoutMode
+                .flatMap(ReaderLayoutMode.init(rawValue:)) ?? fallback.layoutMode,
+            pageTurnStyle: defaults.string(forKey: "\(keyPrefix).pageTurnStyle")
+                .flatMap(ReaderPageTurnStyle.init(rawValue:)) ?? fallback.pageTurnStyle
         ).clamped()
     }
 
@@ -45,6 +47,8 @@ final class ReaderSettingsStore: ObservableObject {
 
     func selectLayoutMode(_ mode: ReaderLayoutMode) { settings.layoutMode = mode }
 
+    func selectPageTurnStyle(_ style: ReaderPageTurnStyle) { settings.pageTurnStyle = style }
+
     private func persist() {
         let value = settings.clamped()
         defaults.set(value.fontSize, forKey: "\(keyPrefix).fontSize")
@@ -52,5 +56,6 @@ final class ReaderSettingsStore: ObservableObject {
         defaults.set(value.horizontalPadding, forKey: "\(keyPrefix).horizontalPadding")
         defaults.set(value.theme.rawValue, forKey: "\(keyPrefix).theme")
         defaults.set(value.layoutMode.rawValue, forKey: "\(keyPrefix).layoutMode")
+        defaults.set(value.pageTurnStyle.rawValue, forKey: "\(keyPrefix).pageTurnStyle")
     }
 }

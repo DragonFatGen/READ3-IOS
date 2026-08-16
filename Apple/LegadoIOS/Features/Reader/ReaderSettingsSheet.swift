@@ -26,6 +26,22 @@ struct ReaderSettingsSheet: View {
                         }
                     }
                 }
+                if store.settings.layoutMode == .paged {
+                    Section("翻页效果") {
+                        Picker(
+                            "翻页效果",
+                            selection: Binding<ReaderPageTurnStyle>(
+                                get: { store.settings.pageTurnStyle },
+                                set: { style in store.selectPageTurnStyle(style) }
+                            )
+                        ) {
+                            ForEach(ReaderPageTurnStyle.allCases, id: \.self) { style in
+                                Text(style.title).tag(style)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                }
                 stepperRow(
                     title: "字号",
                     value: store.settings.fontSize,

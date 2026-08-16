@@ -129,28 +129,19 @@ struct ReaderView: View {
     @ViewBuilder
     private func pagedContent(width: CGFloat) -> some View {
         if !viewModel.pages.isEmpty {
-            TabView(selection: Binding<Int>(
-                get: { viewModel.currentPageIndex },
-                set: { page in viewModel.selectPage(page) }
-            )) {
-                ForEach(viewModel.pages) { page in
-                    Text(page.text)
-                        .font(.system(size: CGFloat(settingsStore.settings.fontSize)))
-                        .lineSpacing(CGFloat(settingsStore.settings.lineSpacing))
-                        .foregroundStyle(settingsStore.settings.theme.foregroundColor)
-                        .padding(.horizontal, CGFloat(settingsStore.settings.horizontalPadding))
-                        .padding(.vertical, ReaderLayoutMetrics.pageVerticalPadding)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-                        .tag(page.index)
-                }
-            }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .contentShape(Rectangle())
-            .simultaneousGesture(SpatialTapGesture().onEnded { value in
-                handlePageTap(value, width: width)
-            })
-            .simultaneousGesture(DragGesture(minimumDistance: ReaderLayoutMetrics.swipeThreshold)
-                .onEnded { value in handleBoundarySwipe(value) })
+            ReaderPagedContentView(
+                pages: viewModel.pages,
+                currentPageIndex: viewModel.currentPageIndex,
+                settings: settingsStore.settings,
+                viewportWidth: width,
+                canTurnPrevious: viewModel.currentPageIndex > 0
+                    || viewModel.previousChapterAvailable,
+                canTurnNext: viewModel.currentPageIndex < viewModel.pages.count - 1
+                    || viewModel.nextChapterAvailable,
+                turnPrevious: viewModel.turnPageBackward,
+                turnNext: viewModel.turnPageForward,
+                toggleControls: { withAnimation { controlsVisible.toggle() } }
+            )
         } else if viewModel.isLoading {
             loadingView
         } else if viewModel.isPaginating {
@@ -319,28 +310,6 @@ struct ReaderView: View {
             .accessibilityLabel(title)
     }
 
-    private func handlePageTap(_ value: SpatialTapGesture.Value, width: CGFloat) {
-        let horizontalRatio = min(max(value.location.x / max(width, 1), 0), 1)
-        if horizontalRatio < ReaderLayoutMetrics.sideTapRatio {
-            viewModel.turnPageBackward()
-        } else if horizontalRatio > 1 - ReaderLayoutMetrics.sideTapRatio {
-            viewModel.turnPageForward()
-        } else {
-            withAnimation { controlsVisible.toggle() }
-        }
-    }
-
-    private func handleBoundarySwipe(_ value: DragGesture.Value) {
-        guard abs(value.translation.width) > abs(value.translation.height) else { return }
-        if value.translation.width < -ReaderLayoutMetrics.swipeThreshold,
-           viewModel.currentPageIndex == viewModel.pages.count - 1 {
-            viewModel.turnPageForward()
-        } else if value.translation.width > ReaderLayoutMetrics.swipeThreshold,
-                  viewModel.currentPageIndex == 0 {
-            viewModel.turnPageBackward()
-        }
-    }
-
     private func paginationConfiguration(for size: CGSize) -> PaginationConfiguration {
         PaginationConfiguration(
             size: size,
@@ -401,8 +370,6 @@ private enum ReaderLayoutMetrics {
     static let topControlBarHeight: CGFloat = 52
     static let bottomControlBarHeight: CGFloat = 94
     static let pageVerticalPadding: CGFloat = 20
-    static let sideTapRatio: CGFloat = 0.30
-    static let swipeThreshold: CGFloat = 40
 }
 
 private struct ReaderViewport {
