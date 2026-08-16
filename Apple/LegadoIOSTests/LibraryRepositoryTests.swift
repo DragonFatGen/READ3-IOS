@@ -1,8 +1,20 @@
+import LegadoCore
 import XCTest
 @testable import LegadoIOS
 
 @MainActor
 final class LibraryRepositoryTests: XCTestCase {
+    func testCorruptedPersistenceLoadsEmptyLibrary() {
+        let suite = "LibraryRepositoryCorrupted.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.removePersistentDomain(forName: suite)
+        defaults.set(Data("not-json".utf8), forKey: "library")
+
+        let repository = LibraryRepository(defaults: defaults, storageKey: "library")
+
+        XCTAssertTrue(repository.books.isEmpty)
+    }
+
     func testBookAndProgressPersist() {
         let suite = "LibraryRepositoryTests.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
@@ -83,12 +95,74 @@ final class LibraryRepositoryTests: XCTestCase {
         )
 
         XCTAssertEqual([oldest, newest].sorted(by: .recentlyRead).first?.name, "中文甲")
+        oldest.lastCheckedAt = Date(timeIntervalSince1970: 20)
+        XCTAssertEqual([newest, oldest].sorted(by: .recentlyUpdated).first?.name, "中文乙")
         XCTAssertEqual([oldest, newest].sorted(by: .recentlyAdded).first?.name, "中文甲")
         let expectedTitle = [oldest.name, newest.name].min {
             $0.localizedStandardCompare($1) == .orderedAscending
         }
         XCTAssertEqual([oldest, newest].sorted(by: .title).first?.name, expectedTitle)
         XCTAssertEqual([newest, oldest].sorted(by: .progress).first?.name, "中文乙")
+    }
+
+    func testLibraryFiltersAndUnknownChapterCountIsNotFinished() {
+        var unread = LibraryBook(source: testSource(), bookInfo: testBookInfo())
+        unread.progress = ReadingProgress(
+            lastChapterURL: "c1", lastChapterName: "第一章", lastChapterIndex: 0,
+            chapterProgress: 0.5, chapterCount: 3, lastReadAt: Date()
+        )
+        var finished = unread
+        finished.progress = ReadingProgress(
+            lastChapterURL: "c3", lastChapterName: "第三章", lastChapterIndex: 2,
+            chapterProgress: 1, chapterCount: 3, lastReadAt: Date()
+        )
+        var updated = unread
+        updated.updateCount = 2
+        var unknown = unread
+        unknown.progress?.chapterCount = 0
+
+        let books = [unread, finished, updated, unknown]
+        XCTAssertEqual(books.filter { $0.matches(.all) }.count, 4)
+        XCTAssertEqual(books.filter { $0.matches(.updates) }.count, 1)
+        XCTAssertEqual(books.filter { $0.matches(.reading) }.count, 3)
+        XCTAssertEqual(books.filter { $0.matches(.finished) }.count, 1)
+        XCTAssertFalse(unknown.isFinished)
+    }
+
+    func testDuplicateIdentityUpdatesExistingAndDifferentSourceMayCoexist() {
+        let fixture = makeRepository()
+        let repository = fixture.repository
+        repository.add(source: testSource(), bookInfo: testBookInfo())
+        repository.add(source: testSource(), bookInfo: testBookInfo())
+        XCTAssertEqual(repository.books.count, 1)
+
+        let otherSource = BookSource(
+            bookSourceUrl: "https://other.example",
+            bookSourceName: "其他书源",
+            searchUrl: "https://other.example/search"
+        )
+        let original = testBookInfo()
+        let otherBook = BookInfoResult(
+            name: original.name,
+            author: original.author,
+            bookURL: original.bookURL,
+            coverURL: original.coverURL,
+            intro: original.intro,
+            kind: original.kind,
+            wordCount: original.wordCount,
+            lastChapter: original.lastChapter,
+            tocURL: original.tocURL,
+            sourceURL: otherSource.bookSourceUrl,
+            sourceName: otherSource.bookSourceName,
+            sourceType: original.sourceType,
+            sourceOrder: original.sourceOrder
+        )
+        repository.add(source: otherSource, bookInfo: otherBook)
+        XCTAssertEqual(repository.books.count, 2)
+        XCTAssertTrue(repository.contains(
+            sourceURL: testSource().bookSourceUrl,
+            bookURL: testBookInfo().bookURL
+        ))
     }
 
     func testSortPreferencePersists() {

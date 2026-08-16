@@ -3,6 +3,7 @@ import Foundation
 
 enum LibrarySortMode: String, CaseIterable, Identifiable {
     case recentlyRead
+    case recentlyUpdated
     case recentlyAdded
     case title
     case progress
@@ -12,6 +13,7 @@ enum LibrarySortMode: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .recentlyRead: "最近阅读"
+        case .recentlyUpdated: "最近更新"
         case .recentlyAdded: "最近加入"
         case .title: "书名"
         case .progress: "阅读进度"
@@ -47,6 +49,14 @@ extension Array where Element == LibraryBook {
                 default: break
                 }
                 if lhs.addedAt != rhs.addedAt { return lhs.addedAt > rhs.addedAt }
+            case .recentlyUpdated:
+                switch (lhs.lastCheckedAt, rhs.lastCheckedAt) {
+                case let (lhsDate?, rhsDate?) where lhsDate != rhsDate:
+                    return lhsDate > rhsDate
+                case (_?, nil): return true
+                case (nil, _?): return false
+                default: break
+                }
             case .recentlyAdded:
                 if lhs.addedAt != rhs.addedAt { return lhs.addedAt > rhs.addedAt }
             case .title:
@@ -58,6 +68,41 @@ extension Array where Element == LibraryBook {
                 }
             }
             return lhs.id < rhs.id
+        }
+    }
+}
+
+enum LibraryFilter: String, CaseIterable, Identifiable {
+    case all
+    case updates
+    case reading
+    case finished
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: "全部"
+        case .updates: "有更新"
+        case .reading: "阅读中"
+        case .finished: "已读完"
+        }
+    }
+}
+
+extension LibraryBook {
+    var isFinished: Bool {
+        guard let progress, progress.chapterCount > 0 else { return false }
+        return progress.lastChapterIndex >= progress.chapterCount - 1
+            && progress.normalizedChapterProgress >= 0.99
+    }
+
+    func matches(_ filter: LibraryFilter) -> Bool {
+        switch filter {
+        case .all: true
+        case .updates: hasUpdate
+        case .reading: progress != nil && !isFinished
+        case .finished: isFinished
         }
     }
 }

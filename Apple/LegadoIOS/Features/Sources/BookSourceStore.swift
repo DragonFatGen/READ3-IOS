@@ -137,6 +137,18 @@ final class BookSourceStore: ObservableObject {
         update(identity) { $0.isEnabled = enabled }
     }
 
+    func setEnabled(_ enabled: Bool, for identities: Set<String>) {
+        guard !identities.isEmpty else { return }
+        let timestamp = now()
+        var changed = false
+        for index in storedSources.indices where identities.contains(storedSources[index].id) {
+            storedSources[index].isEnabled = enabled
+            storedSources[index].updatedAt = timestamp
+            changed = true
+        }
+        if changed { persist() }
+    }
+
     func updateMetadata(identity: String, name: String, groupName: String, isEnabled: Bool) {
         update(identity) {
             $0.source.bookSourceName = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -156,14 +168,40 @@ final class BookSourceStore: ObservableObject {
         persist()
     }
 
-    func remove(identity: String, library: LibraryRepository) throws {
+    func remove(
+        identity: String,
+        library: LibraryRepository,
+        allowingReferences: Bool = false
+    ) throws {
         let count = library.referenceCount(forSourceIdentity: identity)
-        guard count == 0 else { throw BookSourceStoreError.sourceIsReferenced(count: count) }
+        guard allowingReferences || count == 0 else {
+            throw BookSourceStoreError.sourceIsReferenced(count: count)
+        }
         guard storedSources.contains(where: { $0.id == identity }) else {
             throw BookSourceStoreError.sourceNotFound
         }
         storedSources.removeAll { $0.id == identity }
         persist()
+    }
+
+    func remove(
+        identities: Set<String>,
+        library: LibraryRepository,
+        allowingReferences: Bool = false
+    ) throws {
+        guard !identities.isEmpty else { return }
+        if !allowingReferences {
+            let count = identities.reduce(0) {
+                $0 + library.referenceCount(forSourceIdentity: $1)
+            }
+            guard count == 0 else { throw BookSourceStoreError.sourceIsReferenced(count: count) }
+        }
+        storedSources.removeAll { identities.contains($0.id) }
+        persist()
+    }
+
+    func referenceCount(for identities: Set<String>, library: LibraryRepository) -> Int {
+        identities.reduce(0) { $0 + library.referenceCount(forSourceIdentity: $1) }
     }
 
     func editableJSON(for identity: String) throws -> String {

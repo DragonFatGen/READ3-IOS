@@ -6,7 +6,9 @@ struct BookSourceManagementView: View {
     @ObservedObject var library: LibraryRepository
     @StateObject private var health: SourceHealthCoordinator
     @State private var editingSource: StoredBookSource?
-    @State private var deletingSource: StoredBookSource?
+    @State private var deletingIdentities: Set<String> = []
+    @State private var selectedIdentities: Set<String> = []
+    @State private var isSelecting = false
     @State private var message: String?
 
     init(sourceStore: BookSourceStore, dependencies: AppDependencies) {
@@ -17,17 +19,36 @@ struct BookSourceManagementView: View {
 
     var body: some View {
         List {
+            if sourceStore.storedSources.isEmpty {
+                Section {
+                    StatusView(title: "暂无书源", message: "请返回书源页导入书源")
+                        .frame(maxWidth: .infinity)
+                        .listRowBackground(Color.clear)
+                }
+            }
             ForEach(groupNames, id: \.self) { groupName in
                 Section(groupName.isEmpty ? "未分组" : groupName) {
                     ForEach(sources(in: groupName)) { stored in
-                        SourceManagementRow(
-                            stored: stored,
-                            status: health.status(for: stored.id),
-                            onEnabledChanged: { sourceStore.setEnabled($0, for: stored.id) },
-                            onTest: { health.test(stored.source) }
-                        )
+                        HStack(spacing: 10) {
+                            if isSelecting {
+                                if selectedIdentities.contains(stored.id) {
+                                    Image(systemName: "checkmark.circle.fill").foregroundStyle(.blue)
+                                } else {
+                                    Image(systemName: "circle").foregroundStyle(.secondary)
+                                }
+                            }
+                            SourceManagementRow(
+                                stored: stored,
+                                status: health.status(for: stored.id),
+                                onEnabledChanged: { sourceStore.setEnabled($0, for: stored.id) },
+                                onTest: { health.test(stored.source) }
+                            )
+                        }
                         .contentShape(Rectangle())
-                        .onTapGesture { editingSource = stored }
+                        .onTapGesture {
+                            if isSelecting { toggleSelection(stored.id) }
+                            else { editingSource = stored }
+                        }
                         .swipeActions {
                             Button("删除", role: .destructive) { requestDelete(stored) }
                             Button("编辑") { editingSource = stored }.tint(.blue)
@@ -41,10 +62,34 @@ struct BookSourceManagementView: View {
         }
         .navigationTitle("书源管理")
         .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                if isSelecting {
+                    Button(selectedIdentities.count == sourceStore.storedSources.count ? "取消全选" : "全选") {
+                        if selectedIdentities.count == sourceStore.storedSources.count {
+                            selectedIdentities.removeAll()
+                        } else {
+                            selectedIdentities = Set(sourceStore.storedSources.map(\.id))
+                        }
+                    }
+                }
+            }
             ToolbarItemGroup(placement: .topBarTrailing) {
-                Button("测试全部") { health.testAll(sourceStore.enabledSources) }
-                    .disabled(sourceStore.enabledSources.isEmpty)
-                EditButton()
+                if isSelecting {
+                    Menu {
+                        Button("批量启用") { setSelectedEnabled(true) }
+                        Button("批量禁用") { setSelectedEnabled(false) }
+                        Button("批量删除", role: .destructive) {
+                            deletingIdentities = selectedIdentities
+                        }
+                    } label: { Label("批量操作", systemImage: "ellipsis.circle") }
+                    .disabled(selectedIdentities.isEmpty)
+                    Button("完成") { endSelection() }
+                } else {
+                    Button("测试全部") { health.testAll(sourceStore.enabledSources) }
+                        .disabled(sourceStore.enabledSources.isEmpty)
+                    Button("选择") { isSelecting = true }
+                    EditButton()
+                }
             }
         }
         .sheet(item: $editingSource) { source in
@@ -59,13 +104,21 @@ struct BookSourceManagementView: View {
         }
         .confirmationDialog(
             "删除书源？",
-            isPresented: Binding(get: { deletingSource != nil }, set: { if !$0 { deletingSource = nil } }),
+            isPresented: Binding(
+                get: { !deletingIdentities.isEmpty },
+                set: { if !$0 { deletingIdentities.removeAll() } }
+            ),
             titleVisibility: .visible
         ) {
             Button("删除", role: .destructive) { confirmDelete() }
-            Button("取消", role: .cancel) { deletingSource = nil }
+            Button("取消", role: .cancel) { deletingIdentities.removeAll() }
         } message: {
-            Text("删除未被书架引用的书源后无法恢复。")
+            let count = sourceStore.referenceCount(for: deletingIdentities, library: library)
+            if count > 0 {
+                Text("选中的书源仍被书架中的 \(count) 本书使用。删除后书籍、进度、书签和缓存会保留，但无法检查更新。")
+            } else {
+                Text("将删除选中的 \(deletingIdentities.count) 个书源，此操作无法恢复。")
+            }
         }
         .alert("无法完成操作", isPresented: Binding(
             get: { message != nil }, set: { if !$0 { message = nil } }
@@ -87,21 +140,35 @@ struct BookSourceManagementView: View {
     }
 
     private func requestDelete(_ source: StoredBookSource) {
-        let count = library.referenceCount(forSourceIdentity: source.id)
-        guard count == 0 else {
-            message = BookSourceStoreError.sourceIsReferenced(count: count).localizedDescription
-            return
-        }
-        deletingSource = source
+        deletingIdentities = [source.id]
     }
 
     private func confirmDelete() {
-        guard let source = deletingSource else { return }
+        let identities = deletingIdentities
         do {
-            try sourceStore.remove(identity: source.id, library: library)
-            health.invalidate(identity: source.id)
+            try sourceStore.remove(
+                identities: identities,
+                library: library,
+                allowingReferences: true
+            )
+            identities.forEach { health.invalidate(identity: $0) }
+            selectedIdentities.subtract(identities)
         } catch { message = error.localizedDescription }
-        deletingSource = nil
+        deletingIdentities.removeAll()
+    }
+
+    private func toggleSelection(_ identity: String) {
+        if selectedIdentities.contains(identity) { selectedIdentities.remove(identity) }
+        else { selectedIdentities.insert(identity) }
+    }
+
+    private func setSelectedEnabled(_ enabled: Bool) {
+        sourceStore.setEnabled(enabled, for: selectedIdentities)
+    }
+
+    private func endSelection() {
+        isSelecting = false
+        selectedIdentities.removeAll()
     }
 }
 

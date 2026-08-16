@@ -4,9 +4,11 @@ struct BookshelfView: View {
     @ObservedObject var repository: LibraryRepository
     let dependencies: AppDependencies
     @StateObject private var sortPreference = LibrarySortPreference()
+    @State private var filter: LibraryFilter = .all
     @ObservedObject private var viewModel: LibraryViewModel
     @State private var pendingDeletion: LibraryBook?
     @State private var showsUpdateSettings = false
+    @State private var showsUpdateSummary = false
 
     init(repository: LibraryRepository, dependencies: AppDependencies) {
         self.repository = repository
@@ -14,12 +16,19 @@ struct BookshelfView: View {
         viewModel = dependencies.libraryViewModel
     }
 
-    private var displayedBooks: [LibraryBook] { repository.books.sorted(by: sortPreference.mode) }
+    private var displayedBooks: [LibraryBook] {
+        repository.books.filter { $0.matches(filter) }.sorted(by: sortPreference.mode)
+    }
 
     var body: some View {
         Group {
             if repository.books.isEmpty {
                 StatusView(title: "书架为空", message: "在书籍详情页将书籍加入书架")
+            } else if displayedBooks.isEmpty {
+                StatusView(
+                    title: filter == .updates ? "暂无更新书籍" : "没有符合筛选条件的书籍",
+                    message: "可以切换书架筛选条件"
+                )
             } else {
                 List {
                     ForEach(displayedBooks) { book in
@@ -40,11 +49,11 @@ struct BookshelfView: View {
                                         Text("最新：\(latest)").font(.caption).lineLimit(1)
                                     }
                                     if let progress = book.progress {
-                                        Text(progress.lastChapterName).font(.caption).lineLimit(1)
+                                        Text("当前：\(progress.lastChapterName)").font(.caption).lineLimit(1)
                                         if let overall = progress.overallProgress {
                                             ProgressView(value: overall)
                                                 .accessibilityLabel("全书阅读进度")
-                                            Text(overall, format: .percent.precision(.fractionLength(0)))
+                                            Text("阅读 \(overall.formatted(.percent.precision(.fractionLength(0))))")
                                                 .font(.caption).foregroundStyle(.secondary)
                                         }
                                     } else {
@@ -105,8 +114,11 @@ struct BookshelfView: View {
         .navigationTitle("书架")
         .overlay(alignment: .bottom) {
             if let summary = viewModel.lastSummary {
-                Text("更新成功 \(summary.succeeded) 本，失败 \(summary.failed) 本")
-                    .font(.caption).padding(8).background(.thinMaterial, in: Capsule()).padding()
+                Button { showsUpdateSummary = true } label: {
+                    Text("检查 \(summary.checkedCount) 本 · 更新 \(summary.updatedBookCount) 本 · 新增 \(summary.newChapterCount) 章 · 失败 \(summary.failed) 本")
+                        .font(.caption).padding(8).background(.thinMaterial, in: Capsule()).padding()
+                }
+                .buttonStyle(.plain)
             }
         }
         .toolbar {
@@ -115,10 +127,14 @@ struct BookshelfView: View {
                     Label("更新设置", systemImage: "gearshape")
                 }
                 Menu {
+                    Picker("筛选", selection: $filter) {
+                        ForEach(LibraryFilter.allCases) { value in Text(value.title).tag(value) }
+                    }
+                    Divider()
                     Picker("排序", selection: $sortPreference.mode) {
                         ForEach(LibrarySortMode.allCases) { mode in Text(mode.title).tag(mode) }
                     }
-                } label: { Label("排序", systemImage: "arrow.up.arrow.down") }
+                } label: { Label("筛选与排序", systemImage: "line.3.horizontal.decrease.circle") }
             }
         }
         .sheet(isPresented: $showsUpdateSettings) {
@@ -128,6 +144,12 @@ struct BookshelfView: View {
                     notifier: dependencies.libraryUpdateNotifier
                 )
             }
+        }
+        .sheet(isPresented: $showsUpdateSummary) {
+            NavigationStack {
+                LibraryUpdateSummaryView(summary: viewModel.lastSummary ?? .empty)
+            }
+            .presentationDetents([.medium])
         }
         .confirmationDialog(
             "从书架删除《\(pendingDeletion?.name ?? "")》？",
@@ -141,6 +163,36 @@ struct BookshelfView: View {
             Button("取消", role: .cancel) { pendingDeletion = nil }
         } message: {
             Text("阅读进度、章节缓存和书签将同时清除；书源不会被删除。")
+        }
+    }
+}
+
+private struct LibraryUpdateSummaryView: View {
+    let summary: LibraryRefreshSummary
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            Section("更新结果") {
+                LabeledContent("检查书籍", value: "\(summary.checkedCount) 本")
+                LabeledContent("发现更新", value: "\(summary.updatedBookCount) 本")
+                LabeledContent("新增章节", value: "\(summary.newChapterCount) 章")
+                LabeledContent("失败", value: "\(summary.failed) 本")
+            }
+            if !summary.failures.isEmpty {
+                Section("失败书目") {
+                    ForEach(summary.failures) { failure in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(failure.bookName)
+                            Text(failure.message).font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("检查更新")
+        .toolbar {
+            ToolbarItem(placement: .confirmationAction) { Button("完成") { dismiss() } }
         }
     }
 }

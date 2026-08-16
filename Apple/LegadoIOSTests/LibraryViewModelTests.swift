@@ -16,7 +16,7 @@ final class LibraryViewModelTests: XCTestCase {
         let missingFixture = makeFixture(bookCount: 1, importsSource: false)
         let missingBook = try XCTUnwrap(missingFixture.repository.books.first)
         await missingFixture.viewModel.refreshBook(missingBook)
-        XCTAssertEqual(missingFixture.repository.books.first?.lastUpdateError, "书源不可用")
+        XCTAssertEqual(missingFixture.repository.books.first?.lastUpdateError, "原书源已删除")
     }
 
     func testBatchChecksAllBooksContinuesAfterFailureAndBoundsConcurrency() async {
@@ -24,7 +24,10 @@ final class LibraryViewModelTests: XCTestCase {
         let fixture = makeFixture(bookCount: 7, checker: checker)
         await fixture.viewModel.refreshAll()
 
-        XCTAssertEqual(fixture.viewModel.lastSummary, LibraryRefreshSummary(succeeded: 6, failed: 1))
+        XCTAssertEqual(fixture.viewModel.lastSummary?.succeeded, 6)
+        XCTAssertEqual(fixture.viewModel.lastSummary?.failed, 1)
+        XCTAssertEqual(fixture.viewModel.lastSummary?.failures.first?.bookName, "书 2")
+        XCTAssertEqual(fixture.viewModel.lastSummary?.failures.first?.message, "获取目录失败")
         XCTAssertEqual(fixture.repository.books.filter { $0.lastCheckedAt != nil }.count, 6)
         XCTAssertEqual(fixture.repository.books.filter { $0.lastUpdateError != nil }.count, 1)
         let maximumConcurrency = await checker.maximumConcurrency
@@ -34,8 +37,10 @@ final class LibraryViewModelTests: XCTestCase {
     func testBatchMissingSourcesFailIndependentlyWithoutCrashing() async {
         let fixture = makeFixture(bookCount: 2, importsSource: false)
         await fixture.viewModel.refreshAll()
-        XCTAssertEqual(fixture.viewModel.lastSummary, LibraryRefreshSummary(succeeded: 0, failed: 2))
-        XCTAssertTrue(fixture.repository.books.allSatisfy { $0.lastUpdateError == "书源不可用" })
+        XCTAssertEqual(fixture.viewModel.lastSummary?.succeeded, 0)
+        XCTAssertEqual(fixture.viewModel.lastSummary?.failed, 2)
+        XCTAssertTrue(fixture.repository.books.allSatisfy { $0.lastUpdateError == "原书源已删除" })
+        XCTAssertEqual(fixture.viewModel.lastSummary?.failures.count, 2)
     }
 
     func testCancellationPreservesCompletedResultsAndStopsRemainingBatches() async {

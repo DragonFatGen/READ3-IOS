@@ -5,6 +5,15 @@ import XCTest
 
 @MainActor
 final class BookSourceStoreTests: XCTestCase {
+    func testCorruptedPersistenceLoadsEmptySourceList() {
+        let fixture = makeDefaults()
+        fixture.defaults.set(Data("not-json".utf8), forKey: fixture.key)
+
+        let store = BookSourceStore(defaults: fixture.defaults, storageKey: fixture.key)
+
+        XCTAssertTrue(store.allSources.isEmpty)
+    }
+
     func testLegacyMigrationPreservesOrderIdentityAndEnablesAll() throws {
         let fixture = makeDefaults()
         let sources = [source("https://one.example", "一"), source("https://two.example", "二")]
@@ -101,6 +110,34 @@ final class BookSourceStoreTests: XCTestCase {
 
         XCTAssertTrue(store.enabledSources.isEmpty)
         XCTAssertEqual(store.source(for: book.source.bookSourceUrl), book.source)
+    }
+
+    func testBatchEnableDisableAndConfirmedDeletePreservesLibraryBook() throws {
+        let fixture = makeDefaults()
+        let store = BookSourceStore(defaults: fixture.defaults, storageKey: fixture.key)
+        let first = testSource()
+        let second = source("https://two.example", "二")
+        store.upsert(first)
+        store.upsert(second)
+        let identities = Set([first.bookSourceUrl, second.bookSourceUrl])
+
+        store.setEnabled(false, for: identities)
+        XCTAssertTrue(store.enabledSources.isEmpty)
+        store.setEnabled(true, for: identities)
+        XCTAssertEqual(store.enabledSources.count, 2)
+
+        let libraryFixture = makeDefaults()
+        let library = LibraryRepository(defaults: libraryFixture.defaults, storageKey: libraryFixture.key)
+        library.add(source: first, bookInfo: testBookInfo())
+        XCTAssertEqual(store.referenceCount(for: identities, library: library), 1)
+        XCTAssertThrowsError(try store.remove(identities: identities, library: library))
+        XCTAssertNoThrow(try store.remove(
+            identities: identities,
+            library: library,
+            allowingReferences: true
+        ))
+        XCTAssertTrue(store.allSources.isEmpty)
+        XCTAssertEqual(library.books.count, 1)
     }
 
     private func source(_ identity: String, _ name: String) -> BookSource {

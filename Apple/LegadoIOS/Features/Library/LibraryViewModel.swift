@@ -5,15 +5,18 @@ struct LibraryRefreshSummary: Equatable, Sendable {
     var succeeded: Int
     var failed: Int
     var updates: [LibraryBookUpdateNotification]
+    var failures: [LibraryUpdateFailure]
 
     init(
         succeeded: Int,
         failed: Int,
-        updates: [LibraryBookUpdateNotification] = []
+        updates: [LibraryBookUpdateNotification] = [],
+        failures: [LibraryUpdateFailure] = []
     ) {
         self.succeeded = succeeded
         self.failed = failed
         self.updates = updates
+        self.failures = failures
     }
 
     var checkedCount: Int { succeeded + failed }
@@ -21,6 +24,14 @@ struct LibraryRefreshSummary: Equatable, Sendable {
     var newChapterCount: Int { updates.reduce(0) { $0 + $1.newChapterCount } }
 
     static let empty = LibraryRefreshSummary(succeeded: 0, failed: 0)
+}
+
+struct LibraryUpdateFailure: Identifiable, Equatable, Sendable {
+    let bookID: String
+    let bookName: String
+    let message: String
+
+    var id: String { bookID }
 }
 
 private struct LibraryUpdateOutcome: Sendable {
@@ -78,7 +89,8 @@ final class LibraryViewModel: ObservableObject {
         lastSummary = LibraryRefreshSummary(
             succeeded: outcome.result == nil ? 0 : 1,
             failed: outcome.errorMessage == nil ? 0 : 1,
-            updates: notificationUpdates(for: outcome)
+            updates: notificationUpdates(for: outcome),
+            failures: failureDetails(for: outcome)
         )
     }
 
@@ -137,7 +149,7 @@ final class LibraryViewModel: ObservableObject {
                         guard let source else {
                             return LibraryUpdateOutcome(
                                 bookID: book.id, bookName: book.name,
-                                result: nil, errorMessage: "书源不可用"
+                                result: nil, errorMessage: "原书源已删除"
                             )
                         }
                         do {
@@ -166,6 +178,7 @@ final class LibraryViewModel: ObservableObject {
                         summary.updates.append(contentsOf: notificationUpdates(for: outcome))
                     } else if outcome.errorMessage != nil {
                         summary.failed += 1
+                        summary.failures.append(contentsOf: failureDetails(for: outcome))
                     }
                     apply(outcome)
                     checkingBookIDs.remove(outcome.bookID)
@@ -181,7 +194,7 @@ final class LibraryViewModel: ObservableObject {
         guard let source = sourceStore.source(for: book.source.bookSourceUrl) else {
             return LibraryUpdateOutcome(
                 bookID: book.id, bookName: book.name,
-                result: nil, errorMessage: "书源不可用"
+                result: nil, errorMessage: "原书源已删除"
             )
         }
         do {
@@ -209,6 +222,15 @@ final class LibraryViewModel: ObservableObject {
             bookName: outcome.bookName,
             newChapterCount: result.newChapterCount,
             latestChapterName: result.latestChapterName
+        )]
+    }
+
+    private func failureDetails(for outcome: LibraryUpdateOutcome) -> [LibraryUpdateFailure] {
+        guard let message = outcome.errorMessage else { return [] }
+        return [LibraryUpdateFailure(
+            bookID: outcome.bookID,
+            bookName: outcome.bookName,
+            message: message
         )]
     }
 

@@ -4,12 +4,14 @@ import SwiftUI
 
 struct SearchView: View {
     @ObservedObject private var sourceStore: BookSourceStore
+    @ObservedObject private var libraryRepository: LibraryRepository
     let dependencies: AppDependencies
     @StateObject private var viewModel: SearchViewModel
     @State private var selectedIdentity: String?
 
     init(source: BookSource, dependencies: AppDependencies) {
         sourceStore = dependencies.sourceStore
+        libraryRepository = dependencies.libraryRepository
         self.dependencies = dependencies
         _selectedIdentity = State(initialValue: source.bookSourceUrl)
         _viewModel = StateObject(wrappedValue: SearchViewModel(
@@ -73,7 +75,15 @@ struct SearchView: View {
                     if let source = viewModel.source {
                         NavigationLink {
                             BookDetailView(source: source, searchResult: book, dependencies: dependencies)
-                        } label: { SearchResultRow(book: book) }
+                        } label: {
+                            SearchResultRow(
+                                book: book,
+                                isInLibrary: libraryRepository.contains(
+                                    sourceURL: source.bookSourceUrl,
+                                    bookURL: book.bookURL
+                                )
+                            )
+                        }
                     }
                 }
                 .listStyle(.plain)
@@ -89,12 +99,22 @@ struct SearchView: View {
 
 private struct SearchResultRow: View {
     let book: BookSearchResult
+    let isInLibrary: Bool
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             CoverImage(urlString: book.coverURL, width: 56, height: 76)
             VStack(alignment: .leading, spacing: 5) {
-                Text(book.name).font(.headline)
+                HStack {
+                    Text(book.name).font(.headline)
+                    if isInLibrary {
+                        Text("已在书架")
+                            .font(.caption2.bold())
+                            .foregroundStyle(.blue)
+                            .padding(.horizontal, 6).padding(.vertical, 2)
+                            .background(.blue.opacity(0.12), in: Capsule())
+                    }
+                }
                 Text(book.author).font(.subheadline).foregroundStyle(.secondary)
                 if let lastChapter = book.lastChapter, !lastChapter.isEmpty {
                     Text(lastChapter).font(.caption).foregroundStyle(.secondary).lineLimit(1)
