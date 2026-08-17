@@ -227,7 +227,10 @@ public struct RequestBuilder: Sendable {
             errorPolicy: context.errorPolicy
         )
         let expression = try RuleParser().parse(normalized, context: RuleParseContext(errorPolicy: context.errorPolicy))
-        let rendered = try RuleExecutor(javaScriptExecutor: javaScriptExecutor).execute(
+        let rendered = try RuleExecutor(
+            selectorExecutor: RequestURLLiteralSelectorExecutor(),
+            javaScriptExecutor: javaScriptExecutor
+        ).execute(
             expression,
             input: RuleExecutionInput(.string(value)),
             context: &executionContext
@@ -605,6 +608,32 @@ public struct RequestBuilder: Sendable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
         return String(decoding: try encoder.encode(value), as: UTF8.self)
+    }
+}
+
+private struct RequestURLLiteralSelectorExecutor: RuleSelectorExecutor {
+    func execute(
+        selector: SelectorRule,
+        input: RuleValue,
+        context: RuleExecutionContext
+    ) throws -> RuleValue {
+        .string(selector.value)
+    }
+
+    func execute(
+        jsonPath: String,
+        input: RuleValue,
+        context: RuleExecutionContext
+    ) throws -> RuleValue {
+        throw RuleExecutionError.unsupportedExecutionNode("JSONPath in request URL")
+    }
+
+    func execute(
+        xpath: String,
+        input: RuleValue,
+        context: RuleExecutionContext
+    ) throws -> RuleValue {
+        throw RuleExecutionError.unsupportedExecutionNode("XPath in request URL")
     }
 }
 
