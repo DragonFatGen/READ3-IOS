@@ -202,6 +202,17 @@ public struct RequestBuilder: Sendable {
             context: context,
             variables: variables
         )
+        let hasPut = normalized.range(of: "@put:{", options: .caseInsensitive) != nil
+        let hasTemplateRead = normalized.contains("{{") ||
+            normalized.range(of: "@get:{", options: .caseInsensitive) != nil
+        let hasJavaScript = normalized.range(of: "@js:", options: .caseInsensitive) != nil ||
+            normalized.range(of: "<js>", options: .caseInsensitive) != nil
+        if hasPut, !hasTemplateRead, !hasJavaScript {
+            // A request URL is literal text, while the general rule parser treats a
+            // bare expression as a selector. An empty compatible template keeps the
+            // URL literal and still lets the surrounding @put persist its variables.
+            normalized += "{{}}"
+        }
         guard normalized.contains("{{") ||
                 normalized.range(of: "@get:{", options: .caseInsensitive) != nil ||
                 normalized.range(of: "@put:{", options: .caseInsensitive) != nil ||
