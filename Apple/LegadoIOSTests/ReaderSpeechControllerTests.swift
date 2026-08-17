@@ -156,9 +156,18 @@ final class ReaderSpeechControllerTests: XCTestCase {
         let fixture = makeFixture()
         await fixture.loadAndStart()
         fixture.controller.selectSleepTimer(.fifteenMinutes)
-        await Task.yield()
+
+        for _ in 0..<300 {
+            if await fixture.sleeper.hasPendingSleep() {
+                break
+            }
+            try? await Task.sleep(for: .milliseconds(2))
+        }
+
+        let hasPendingSleep = await fixture.sleeper.hasPendingSleep()
+        XCTAssertTrue(hasPendingSleep)
         await fixture.sleeper.expireAll()
-        await Task.yield()
+        await waitUntil { fixture.controller.state == .idle }
         XCTAssertEqual(fixture.controller.state, .idle)
     }
 
@@ -415,6 +424,10 @@ private actor TestSpeechSleeper: ReaderSpeechSleeping {
         let values = Array(continuations.values)
         continuations = [:]
         values.forEach { $0.resume() }
+    }
+
+    func hasPendingSleep() -> Bool {
+        !continuations.isEmpty
     }
 
     private func cancel(id: UUID) {
