@@ -12,7 +12,9 @@ struct ReaderSpeechControlView: View {
             Form {
                 Section("朗读控制") {
                     HStack {
-                        speechButton("上一句", icon: "backward.end.fill", action: controller.previousSegment)
+                        speechButton("上一句", icon: "backward.end.fill") {
+                            controller.previousSegment()
+                        }
                         Spacer()
                         Button {
                             controller.togglePlayback(from: reader)
@@ -22,9 +24,13 @@ struct ReaderSpeechControlView: View {
                         .buttonStyle(.borderedProminent)
                         .accessibilityLabel(primaryTitle)
                         Spacer()
-                        speechButton("下一句", icon: "forward.end.fill", action: controller.nextSegment)
+                        speechButton("下一句", icon: "forward.end.fill") {
+                            controller.nextSegment()
+                        }
                         Spacer()
-                        speechButton("停止朗读", icon: "stop.fill", action: controller.stop)
+                        speechButton("停止朗读", icon: "stop.fill") {
+                            controller.stop()
+                        }
                     }
                     if let message = controller.speechErrorMessage {
                         Text(message).foregroundStyle(.secondary)
@@ -36,7 +42,9 @@ struct ReaderSpeechControlView: View {
                         "语速",
                         selection: Binding<Double>(
                             get: { settingsStore.settings.rate },
-                            set: controller.selectRate
+                            set: { rate in
+                                controller.selectRate(rate)
+                            }
                         )
                     ) {
                         ForEach(ReaderSpeechSettings.supportedRates, id: \.self) { rate in
@@ -51,7 +59,9 @@ struct ReaderSpeechControlView: View {
                         "停止时间",
                         selection: Binding<ReaderSleepTimerOption>(
                             get: { controller.sleepTimerOption },
-                            set: controller.selectSleepTimer
+                            set: { option in
+                                controller.selectSleepTimer(option)
+                            }
                         )
                     ) {
                         ForEach(ReaderSleepTimerOption.allCases, id: \.self) { option in
@@ -65,7 +75,9 @@ struct ReaderSpeechControlView: View {
                         "连续朗读下一章",
                         isOn: Binding<Bool>(
                             get: { settingsStore.settings.continuousReading },
-                            set: controller.selectContinuousReading
+                            set: { enabled in
+                                controller.selectContinuousReading(enabled)
+                            }
                         )
                     )
                     NavigationLink("系统语音") {
