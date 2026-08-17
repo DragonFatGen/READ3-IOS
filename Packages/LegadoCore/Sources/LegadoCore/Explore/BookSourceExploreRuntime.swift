@@ -1,10 +1,11 @@
 import Foundation
 
-public struct BookSourceSearchRuntime: Sendable {
+public struct BookSourceExploreRuntime: Sendable {
     private let httpClient: any HTTPClient
     private let requestBuilder: RequestBuilder
     private let bookListParser: BookListParser
     private let textDecoder: any TextDecoder
+    private let hasJavaScriptExecutor: Bool
 
     public init(
         httpClient: any HTTPClient,
@@ -20,26 +21,32 @@ public struct BookSourceSearchRuntime: Sendable {
             javaScriptExecutor: javaScriptExecutor
         )
         self.textDecoder = textDecoder
+        hasJavaScriptExecutor = javaScriptExecutor != nil
     }
 
-    public func search(
+    public func explore(
         source: BookSource,
-        keyword: String,
+        url: String,
         page: Int = 1
     ) async throws -> [BookSearchResult] {
-        guard let searchURL = nonblank(source.searchUrl), let rules = source.ruleSearch,
-              nonblank(rules.bookList) != nil else {
-            throw BookSearchError.searchNotSupported
+        guard nonblank(url) != nil else { throw BookExploreError.exploreNotSupported }
+        let rules: any BookListRuleDefinition
+        if let exploreRules = source.ruleExplore, nonblank(exploreRules.bookList) != nil {
+            rules = exploreRules
+        } else if let searchRules = source.ruleSearch, nonblank(searchRules.bookList) != nil {
+            rules = searchRules
+        } else {
+            throw BookExploreError.exploreNotSupported
         }
-        if requiresNetworkHost(searchURL) { throw BookSearchError.unsupportedJavaScriptNetworkHost }
+        if requiresNetworkHost(url) { throw BookExploreError.unsupportedJavaScriptNetworkHost }
+        if nonblank(source.loginCheckJs) != nil { throw BookExploreError.unsupportedWebView }
 
         let built: RequestBuildResult
         do {
             built = try await requestBuilder.buildResult(
-                searchURL,
+                url,
                 source: source,
                 context: RequestBuildContext(
-                    keyword: keyword,
                     page: page,
                     sourceURL: source.bookSourceUrl,
                     baseURL: source.bookSourceUrl,
@@ -47,16 +54,24 @@ public struct BookSourceSearchRuntime: Sendable {
                 )
             )
         } catch {
-            throw BookSearchError.requestBuildFailed(error.localizedDescription)
+            throw BookExploreError.requestBuildFailed(error.localizedDescription)
+        }
+
+        if built.request.options.requiresWebView ||
+            nonblank(built.request.options.webJavaScript) != nil {
+            throw BookExploreError.unsupportedWebView
+        }
+        if nonblank(built.request.options.javaScript) != nil, !hasJavaScriptExecutor {
+            throw BookExploreError.requestBuildFailed("The URL option requires a JavaScript executor.")
         }
 
         let response: HTTPResponse
         do { response = try await httpClient.send(built.request) }
-        catch { throw BookSearchError.networkFailed(error.localizedDescription) }
+        catch { throw BookExploreError.networkFailed(error.localizedDescription) }
 
         let body: String
         do { body = try response.text(decoder: textDecoder) }
-        catch { throw BookSearchError.responseDecodeFailed(error.localizedDescription) }
+        catch { throw BookExploreError.responseDecodeFailed(error.localizedDescription) }
 
         do {
             return try bookListParser.parse(
@@ -71,7 +86,7 @@ public struct BookSourceSearchRuntime: Sendable {
         }
     }
 
-    private func map(_ error: BookListParseError) -> BookSearchError {
+    private func map(_ error: BookListParseError) -> BookExploreError {
         switch error {
         case let .bookListRuleFailed(message): .bookListRuleFailed(message)
         case let .fieldRuleFailed(field, message): .fieldRuleFailed(field: field, message: message)

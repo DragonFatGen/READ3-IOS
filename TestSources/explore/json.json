@@ -1,0 +1,6 @@
+{
+  "items": [
+    {"name": "JSON A", "author": "JA", "url": "/book/ja", "cover": "covers/ja.jpg"},
+    {"name": "JSON B", "author": "JB", "url": "/book/jb", "cover": "covers/jb.jpg"}
+  ]
+}

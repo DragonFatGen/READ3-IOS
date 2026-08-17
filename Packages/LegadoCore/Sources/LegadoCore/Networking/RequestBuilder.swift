@@ -40,16 +40,35 @@ public struct RequestBuildContext: Equatable, Sendable {
     }
 }
 
+public struct RequestBuildResult: Sendable, Equatable {
+    public let request: HTTPRequest
+    public let temporaryVariables: [String: String]
+    public let variableWrites: [String: String]
+
+    public init(
+        request: HTTPRequest,
+        temporaryVariables: [String: String],
+        variableWrites: [String: String]
+    ) {
+        self.request = request
+        self.temporaryVariables = temporaryVariables
+        self.variableWrites = variableWrites
+    }
+}
+
 public struct RequestBuilder: Sendable {
     private let cookieStore: (any HTTPCookieStore)?
     private let textEncoder: any TextEncoder
+    private let javaScriptExecutor: (any RuleJavaScriptExecutor)?
 
     public init(
         cookieStore: (any HTTPCookieStore)? = nil,
-        textEncoder: any TextEncoder = FoundationTextEncoder()
+        textEncoder: any TextEncoder = FoundationTextEncoder(),
+        javaScriptExecutor: (any RuleJavaScriptExecutor)? = nil
     ) {
         self.cookieStore = cookieStore
         self.textEncoder = textEncoder
+        self.javaScriptExecutor = javaScriptExecutor
     }
 
     public func build(
@@ -57,11 +76,19 @@ public struct RequestBuilder: Sendable {
         source: BookSource,
         context: RequestBuildContext = RequestBuildContext()
     ) async throws -> HTTPRequest {
+        try await buildResult(legadoURL, source: source, context: context).request
+    }
+
+    public func buildResult(
+        _ legadoURL: String,
+        source: BookSource,
+        context: RequestBuildContext = RequestBuildContext()
+    ) async throws -> RequestBuildResult {
         var resolvedContext = context
         if resolvedContext.sourceURL == nil { resolvedContext.sourceURL = source.bookSourceUrl }
         if resolvedContext.baseURL == nil { resolvedContext.baseURL = source.bookSourceUrl }
         if resolvedContext.sourceIdentifier == nil { resolvedContext.sourceIdentifier = source.bookSourceUrl }
-        return try await build(legadoURL, sourceHeader: source.header, context: resolvedContext)
+        return try await buildResult(legadoURL, sourceHeader: source.header, context: resolvedContext)
     }
 
     public func build(
@@ -69,8 +96,16 @@ public struct RequestBuilder: Sendable {
         sourceHeader: String? = nil,
         context: RequestBuildContext = RequestBuildContext()
     ) async throws -> HTTPRequest {
-        let rendered = try render(legadoURL, context: context)
-        let parts = splitOptions(rendered)
+        try await buildResult(legadoURL, sourceHeader: sourceHeader, context: context).request
+    }
+
+    public func buildResult(
+        _ legadoURL: String,
+        sourceHeader: String? = nil,
+        context: RequestBuildContext = RequestBuildContext()
+    ) async throws -> RequestBuildResult {
+        let renderResult = try render(legadoURL, sourceHeader: sourceHeader, context: context)
+        let parts = splitOptions(renderResult.value)
         let options = try parseOptions(parts.options, policy: context.errorPolicy)
         let method = try parseMethod(options.method, policy: context.errorPolicy)
 
@@ -91,10 +126,16 @@ public struct RequestBuilder: Sendable {
             headers["proxy"] = nil
         }
 
+        let requestURL = try applyOptionJavaScript(
+            options.javaScript,
+            to: parts.url,
+            sourceHeader: sourceHeader,
+            context: context
+        )
         let resolvedURL = if method == .get {
-            try resolveGETURL(parts.url, baseURL: context.baseURL, charset: options.charset)
+            try resolveGETURL(requestURL, baseURL: context.baseURL, charset: options.charset)
         } else {
-            resolveURL(parts.url, baseURL: context.baseURL)
+            resolveURL(requestURL, baseURL: context.baseURL)
         }
         guard let resolvedURL else {
             throw HTTPError.invalidURL(parts.url)
@@ -112,7 +153,7 @@ public struct RequestBuilder: Sendable {
             charset: options.charset,
             headers: &headers
         )
-        return HTTPRequest(
+        let request = HTTPRequest(
             url: url,
             method: method,
             headers: headers,
@@ -125,9 +166,22 @@ public struct RequestBuilder: Sendable {
             retryCount: max(0, options.retry),
             options: effectiveOptions
         )
+        return RequestBuildResult(
+            request: request,
+            temporaryVariables: renderResult.temporaryVariables,
+            variableWrites: renderResult.variableWrites
+        )
     }
 
-    private func render(_ value: String, context: RequestBuildContext) throws -> String {
+    private func render(
+        _ value: String,
+        sourceHeader: String?,
+        context: RequestBuildContext
+    ) throws -> (
+        value: String,
+        temporaryVariables: [String: String],
+        variableWrites: [String: String]
+    ) {
         var variables = context.sourceVariables
         if let keyword = context.keyword {
             variables["key"] = keyword
@@ -142,10 +196,18 @@ public struct RequestBuilder: Sendable {
         for key in variables.keys.sorted(by: { $0.count > $1.count }) {
             normalized = normalized.replacingOccurrences(of: "{{\(key)}}", with: "@get:{\(key)}")
         }
+        normalized = try renderJavaScriptTemplates(
+            normalized,
+            sourceHeader: sourceHeader,
+            context: context,
+            variables: variables
+        )
         guard normalized.contains("{{") ||
                 normalized.range(of: "@get:{", options: .caseInsensitive) != nil ||
-                normalized.range(of: "@put:{", options: .caseInsensitive) != nil else {
-            return replacePageAlternatives(normalized, page: context.page)
+                normalized.range(of: "@put:{", options: .caseInsensitive) != nil ||
+                normalized.range(of: "@js:", options: .caseInsensitive) != nil ||
+                normalized.range(of: "<js>", options: .caseInsensitive) != nil else {
+            return (replacePageAlternatives(normalized, page: context.page), variables, [:])
         }
         var executionContext = RuleExecutionContext(
             baseUrl: context.baseURL ?? "",
@@ -154,12 +216,84 @@ public struct RequestBuilder: Sendable {
             errorPolicy: context.errorPolicy
         )
         let expression = try RuleParser().parse(normalized, context: RuleParseContext(errorPolicy: context.errorPolicy))
-        let rendered = try RuleExecutor().execute(
+        let rendered = try RuleExecutor(javaScriptExecutor: javaScriptExecutor).execute(
             expression,
-            input: RuleExecutionInput(.none),
+            input: RuleExecutionInput(.string(value)),
             context: &executionContext
         ).value.stringValue
-        return replacePageAlternatives(rendered, page: context.page)
+        let snapshot = executionContext.temporaryVariables.snapshot
+        let writes = snapshot.filter { variables[$0.key] != $0.value }
+        return (replacePageAlternatives(rendered, page: context.page), snapshot, writes)
+    }
+
+    private func renderJavaScriptTemplates(
+        _ value: String,
+        sourceHeader: String?,
+        context: RequestBuildContext,
+        variables: [String: String]
+    ) throws -> String {
+        var result = value
+        while let open = result.range(of: "{{"),
+              let close = result.range(of: "}}", range: open.upperBound..<result.endIndex) {
+            guard let javaScriptExecutor else {
+                throw JavaScriptExecutionError.evaluationFailed("No JavaScript executor is configured.")
+            }
+            let script = String(result[open.upperBound..<close.lowerBound])
+            let output = try javaScriptExecutor.execute(
+                script: script,
+                context: JavaScriptExecutionContext(
+                    result: .none,
+                    baseUrl: context.baseURL ?? "",
+                    source: javaScriptSource(sourceHeader: sourceHeader, context: context),
+                    sourceVariables: context.sourceVariables,
+                    temporaryVariables: variables
+                )
+            ).templateString
+            result.replaceSubrange(open.lowerBound..<close.upperBound, with: output)
+        }
+        return result
+    }
+
+    private func applyOptionJavaScript(
+        _ script: String?,
+        to value: String,
+        sourceHeader: String?,
+        context: RequestBuildContext
+    ) throws -> String {
+        guard let script, !script.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return value
+        }
+        guard let javaScriptExecutor else { return value }
+        let absoluteValue = resolveURL(value, baseURL: context.baseURL)?.absoluteString ?? value
+        var variables = context.sourceVariables
+        if let keyword = context.keyword {
+            variables["key"] = keyword
+            variables["keyword"] = keyword
+        }
+        if let page = context.page { variables["page"] = String(page) }
+        if let pageSize = context.pageSize { variables["pageSize"] = String(pageSize) }
+        return try javaScriptExecutor.execute(
+            script: script,
+            context: JavaScriptExecutionContext(
+                result: .string(absoluteValue),
+                baseUrl: context.baseURL ?? "",
+                source: javaScriptSource(sourceHeader: sourceHeader, context: context),
+                sourceVariables: context.sourceVariables,
+                temporaryVariables: variables
+            )
+        ).ruleValue.stringValue
+    }
+
+    private func javaScriptSource(
+        sourceHeader: String?,
+        context: RequestBuildContext
+    ) -> JavaScriptSourceSnapshot? {
+        guard let sourceURL = context.sourceURL else { return nil }
+        return JavaScriptSourceSnapshot(
+            identifier: context.sourceIdentifier ?? sourceURL,
+            url: sourceURL,
+            header: sourceHeader
+        )
     }
 
     private func replacePageAlternatives(_ value: String, page: Int?) -> String {
