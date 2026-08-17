@@ -227,7 +227,8 @@ private struct ContinueReadingView: View {
                     progressStore: dependencies.libraryRepository,
                     bookmarkStore: dependencies.bookmarkRepository,
                     settingsStore: dependencies.readerSettingsStore,
-                    paginator: dependencies.readerPaginator
+                    paginator: dependencies.readerPaginator,
+                    speechController: dependencies.readerSpeechController
                 )
             } else if viewModel.isLoading {
                 ProgressView("正在恢复阅读…")

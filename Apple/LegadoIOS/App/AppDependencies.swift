@@ -5,6 +5,8 @@ struct AppDependencies {
     let sourceStore: BookSourceStore
     let libraryRepository: LibraryRepository
     let readerSettingsStore: ReaderSettingsStore
+    let readerSpeechSettingsStore: ReaderSpeechSettingsStore
+    let readerSpeechController: ReaderSpeechController
     let bookmarkRepository: BookmarkRepository
     let readerPaginator: any ReaderPaginating
     let searchService: any BookSearching
@@ -59,10 +61,19 @@ struct AppDependencies {
             settingsStore: updateSettingsStore,
             notifier: updateNotifier
         )
+        let speechSettingsStore = ReaderSpeechSettingsStore()
+        let speechController = ReaderSpeechController(
+            synthesizer: AppleReaderSpeechSynthesizer(),
+            audioSession: AppleReaderAudioSessionManager(),
+            remoteCommands: AppleReaderRemoteCommandManager(),
+            settingsStore: speechSettingsStore
+        )
         return AppDependencies(
             sourceStore: sourceStore,
             libraryRepository: libraryRepository,
             readerSettingsStore: ReaderSettingsStore(),
+            readerSpeechSettingsStore: speechSettingsStore,
+            readerSpeechController: speechController,
             bookmarkRepository: BookmarkRepository(),
             readerPaginator: TextKitReaderPaginator(),
             searchService: LegadoSearchService(

@@ -19,6 +19,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.read3.legadoios
         GENERATE_INFOPLIST_FILE: YES
         SWIFT_VERSION: "6.0"
+        INFOPLIST_KEY_UIBackgroundModes: audio
     dependencies:
       - package: LegadoCore
 

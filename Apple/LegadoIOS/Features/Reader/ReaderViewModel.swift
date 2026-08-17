@@ -26,6 +26,7 @@ final class ReaderViewModel: ObservableObject {
     private let paginator: any ReaderPaginating
     private weak var progressStore: (any ReadingProgressStoring)?
     private weak var bookmarkStore: (any BookmarkStoring)?
+    private weak var speechController: ReaderSpeechController?
     private var loadTask: Task<Void, Never>?
     private var preloadTask: Task<Void, Never>?
     private var saveTask: Task<Void, Never>?
@@ -73,6 +74,7 @@ final class ReaderViewModel: ObservableObject {
     }
 
     var currentChapter: BookChapterResult? { chapters[safe: currentChapterIndex] }
+    var libraryBookIdentity: String { libraryBookID }
     var previousChapterAvailable: Bool { currentChapterIndex > 0 }
     var nextChapterAvailable: Bool { currentChapterIndex + 1 < chapters.count }
     var currentNormalizedProgress: Double { chapterProgress }
@@ -116,17 +118,20 @@ final class ReaderViewModel: ObservableObject {
 
     func goToPreviousChapter() {
         guard previousChapterAvailable else { return }
+        speechController?.readerWillNavigate(self)
         switchChapter(to: currentChapterIndex - 1, entryPosition: .start)
     }
 
     func goToNextChapter() {
         guard nextChapterAvailable else { return }
+        speechController?.readerWillNavigate(self)
         switchChapter(to: currentChapterIndex + 1, entryPosition: .start)
     }
 
     func goToChapter(at index: Int) {
         guard chapters.indices.contains(index) else { return }
         guard index != currentChapterIndex else { return }
+        speechController?.readerWillNavigate(self)
         switchChapter(to: index, entryPosition: .start)
     }
 
@@ -141,6 +146,7 @@ final class ReaderViewModel: ObservableObject {
         if currentPageIndex < pages.count - 1 {
             selectPage(currentPageIndex + 1)
         } else if nextChapterAvailable {
+            speechController?.readerWillNavigate(self)
             switchChapter(to: currentChapterIndex + 1, entryPosition: .start)
         }
     }
@@ -150,6 +156,7 @@ final class ReaderViewModel: ObservableObject {
         if currentPageIndex > 0 {
             selectPage(currentPageIndex - 1)
         } else if previousChapterAvailable {
+            speechController?.readerWillNavigate(self)
             switchChapter(to: currentChapterIndex - 1, entryPosition: .end)
         }
     }
@@ -171,6 +178,7 @@ final class ReaderViewModel: ObservableObject {
             scrollRestorationID += 1
         }
         saveProgressNow()
+        speechController?.readerDidSeek(self)
     }
 
     func toggleBookmark() {
@@ -209,6 +217,7 @@ final class ReaderViewModel: ObservableObject {
         if bookmark.chapterIndex == currentChapterIndex {
             seek(to: progress)
         } else {
+            speechController?.readerWillNavigate(self)
             switchChapter(
                 to: bookmark.chapterIndex,
                 entryPosition: .restore,
@@ -227,11 +236,51 @@ final class ReaderViewModel: ObservableObject {
         persistProgress()
     }
 
-    func cancel() {
+    func cancel(persistProgress shouldPersistProgress: Bool = true) {
         loadTask?.cancel()
         preloadTask?.cancel()
         paginationTask?.cancel()
-        saveProgressNow()
+        if shouldPersistProgress { saveProgressNow() }
+        else { saveTask?.cancel() }
+    }
+
+    func attachSpeechController(_ controller: ReaderSpeechController) {
+        speechController = controller
+    }
+
+    func advanceChapterForSpeech() {
+        guard nextChapterAvailable else { return }
+        switchChapter(to: currentChapterIndex + 1, entryPosition: .start)
+    }
+
+    func synchronizeToSpeech(chapterIndex: Int, normalizedProgress: Double) {
+        let safeProgress = min(max(normalizedProgress, 0), 1)
+        guard chapters.indices.contains(chapterIndex) else { return }
+        if chapterIndex == currentChapterIndex {
+            chapterProgress = safeProgress
+            restorationProgress = safeProgress
+            if content != nil { speechController?.readerDidLoadContent(self) }
+        } else {
+            switchChapter(
+                to: chapterIndex,
+                entryPosition: .restore,
+                targetProgress: safeProgress
+            )
+        }
+    }
+
+    func updateProgressFromSpeech(utf16Offset: Int) {
+        guard let text = content?.content else { return }
+        let total = max(text.utf16.count, 1)
+        chapterProgress = min(max(Double(utf16Offset) / Double(total), 0), 1)
+        if layoutMode == .paged, !pages.isEmpty {
+            if let page = pages.firstIndex(where: { $0.utf16Range.contains(utf16Offset) }) {
+                currentPageIndex = page
+            } else if utf16Offset >= total {
+                currentPageIndex = pages.count - 1
+            }
+        }
+        scheduleProgressSave()
     }
 
     private func switchChapter(
@@ -284,6 +333,7 @@ final class ReaderViewModel: ObservableObject {
                 if self.layoutMode == .paged {
                     self.requestPagination(entryPosition: self.chapterEntryPosition)
                 }
+                self.speechController?.readerDidLoadContent(self)
             } catch is CancellationError {
                 guard let self, self.requestID == id else { return }
                 self.isLoading = false
@@ -293,6 +343,7 @@ final class ReaderViewModel: ObservableObject {
                 self.errorMessage = UserFacingError.message(
                     for: error, fallback: "无法加载章节正文"
                 )
+                self.speechController?.readerDidFailLoadingContent(self)
             }
         }
     }

@@ -5,11 +5,14 @@ struct ReaderView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @ObservedObject private var settingsStore: ReaderSettingsStore
+    @ObservedObject private var speechController: ReaderSpeechController
+    @ObservedObject private var speechSettingsStore: ReaderSpeechSettingsStore
     @StateObject private var viewModel: ReaderViewModel
     @State private var controlsVisible = true
     @State private var showsTOC = false
     @State private var showsSettings = false
     @State private var showsBookmarks = false
+    @State private var showsSpeechControls = false
     @State private var scrollMetrics = ReaderScrollMetrics.zero
     @State private var sliderProgress = 0.0
     @State private var isEditingProgress = false
@@ -24,9 +27,12 @@ struct ReaderView: View {
         progressStore: any ReadingProgressStoring,
         bookmarkStore: any BookmarkStoring,
         settingsStore: ReaderSettingsStore,
-        paginator: any ReaderPaginating
+        paginator: any ReaderPaginating,
+        speechController: ReaderSpeechController
     ) {
         _settingsStore = ObservedObject(wrappedValue: settingsStore)
+        _speechController = ObservedObject(wrappedValue: speechController)
+        _speechSettingsStore = ObservedObject(wrappedValue: speechController.settingsStore)
         _viewModel = StateObject(wrappedValue: ReaderViewModel(
             source: source,
             book: book,
@@ -79,7 +85,15 @@ struct ReaderView: View {
                         onDelete: viewModel.removeBookmark
                     )
                 }
+                .sheet(isPresented: $showsSpeechControls) {
+                    ReaderSpeechControlView(
+                        controller: speechController,
+                        settingsStore: speechSettingsStore,
+                        reader: viewModel
+                    )
+                }
                 .onAppear {
+                    speechController.connect(viewModel)
                     sliderProgress = viewModel.chapterProgress
                     viewModel.setLayoutMode(settingsStore.settings.layoutMode)
                     viewModel.updatePaginationConfiguration(configuration)
@@ -107,7 +121,7 @@ struct ReaderView: View {
             }
         }
         .task { viewModel.loadInitialChapter() }
-        .onDisappear { viewModel.cancel() }
+        .onDisappear { speechController.readerDidDisappear(viewModel) }
         .onChange(of: scenePhase) { phase in
             if phase != .active { viewModel.saveProgressNow() }
         }
@@ -246,6 +260,9 @@ struct ReaderView: View {
                 Button { showsTOC = true } label: { Label("目录", systemImage: "list.bullet") }
                 Button { showsBookmarks = true } label: { Label("书签列表", systemImage: "bookmark.square") }
                 Button { showsSettings = true } label: { Label("阅读设置", systemImage: "textformat.size") }
+                Button { showsSpeechControls = true } label: {
+                    Label("朗读控制", systemImage: "speaker.wave.2")
+                }
                 Button { viewModel.reloadCurrentChapter() } label: {
                     Label("重新加载本章", systemImage: "arrow.clockwise")
                 }
@@ -263,6 +280,26 @@ struct ReaderView: View {
 
     private var bottomControls: some View {
         VStack(spacing: 6) {
+            if speechController.isSession(for: viewModel) {
+                HStack(spacing: 18) {
+                    controlButton("上一句", icon: "backward.end.fill", action: speechController.previousSegment)
+                    controlButton(
+                        speechController.state == .paused ? "继续朗读" : "暂停朗读",
+                        icon: speechController.state == .paused ? "play.fill" : "pause.fill"
+                    ) { speechController.togglePlayback(from: viewModel) }
+                    controlButton("下一句", icon: "forward.end.fill", action: speechController.nextSegment)
+                    controlButton("停止朗读", icon: "stop.fill", action: speechController.stop)
+                    Button(speechController.currentRateText) { showsSpeechControls = true }
+                        .accessibilityLabel("朗读语速 " + speechController.currentRateText)
+                }
+            } else {
+                Button {
+                    showsSpeechControls = true
+                } label: {
+                    Label("朗读", systemImage: "speaker.wave.2")
+                }
+                .accessibilityLabel("开始朗读")
+            }
             HStack(spacing: 10) {
                 Slider(
                     value: Binding<Double>(
@@ -368,7 +405,7 @@ struct ReaderView: View {
 
 private enum ReaderLayoutMetrics {
     static let topControlBarHeight: CGFloat = 52
-    static let bottomControlBarHeight: CGFloat = 94
+    static let bottomControlBarHeight: CGFloat = 132
     static let pageVerticalPadding: CGFloat = 20
 }
 

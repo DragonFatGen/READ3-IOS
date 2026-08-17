@@ -52,7 +52,8 @@ struct TOCView: View {
                                 progressStore: dependencies.libraryRepository,
                                 bookmarkStore: dependencies.bookmarkRepository,
                                 settingsStore: dependencies.readerSettingsStore,
-                                paginator: dependencies.readerPaginator
+                                paginator: dependencies.readerPaginator,
+                                speechController: dependencies.readerSpeechController
                             )
                         } label: {
                             ChapterRow(chapter: chapter)
