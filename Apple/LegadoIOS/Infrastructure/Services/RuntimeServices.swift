@@ -4,6 +4,11 @@ protocol BookSearching: Sendable {
     func search(source: BookSource, keyword: String) async throws -> [BookSearchResult]
 }
 
+protocol BookExploring: Sendable {
+    func categories(source: BookSource) async throws -> [ExploreKind]
+    func explore(source: BookSource, url: String, page: Int) async throws -> [BookSearchResult]
+}
+
 protocol BookInfoLoading: Sendable {
     func loadBookInfo(source: BookSource, book: BookSearchResult) async throws -> BookInfoResult
 }
@@ -41,6 +46,24 @@ struct LegadoSearchService: BookSearching {
 
     func search(source: BookSource, keyword: String) async throws -> [BookSearchResult] {
         try await runtime.search(source: source, keyword: keyword)
+    }
+}
+
+struct LegadoExploreService: BookExploring {
+    let parser: ExploreURLParser
+    let runtime: BookSourceExploreRuntime
+
+    func categories(source: BookSource) async throws -> [ExploreKind] {
+        guard let definition = source.exploreUrl else { return [] }
+        return try parser.parse(definition, source: source)
+    }
+
+    func explore(
+        source: BookSource,
+        url: String,
+        page: Int
+    ) async throws -> [BookSearchResult] {
+        try await runtime.explore(source: source, url: url, page: page)
     }
 }
 

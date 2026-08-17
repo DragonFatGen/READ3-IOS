@@ -10,6 +10,7 @@ struct AppDependencies {
     let bookmarkRepository: BookmarkRepository
     let readerPaginator: any ReaderPaginating
     let searchService: any BookSearching
+    let exploreService: any BookExploring
     let bookInfoService: any BookInfoLoading
     let tocService: any TOCLoading
     let bookUpdateChecker: any BookUpdateChecking
@@ -78,6 +79,13 @@ struct AppDependencies {
             readerPaginator: TextKitReaderPaginator(),
             searchService: LegadoSearchService(
                 runtime: BookSourceSearchRuntime(
+                    httpClient: httpClient,
+                    javaScriptExecutor: javaScriptExecutor
+                )
+            ),
+            exploreService: LegadoExploreService(
+                parser: ExploreURLParser(javaScriptExecutor: javaScriptExecutor),
+                runtime: BookSourceExploreRuntime(
                     httpClient: httpClient,
                     javaScriptExecutor: javaScriptExecutor
                 )

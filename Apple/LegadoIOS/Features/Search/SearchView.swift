@@ -38,7 +38,9 @@ struct SearchView: View {
             }
             select(identity: sources.first?.bookSourceUrl)
         }
-        .onDisappear(perform: viewModel.cancelSearch)
+        .onDisappear {
+            viewModel.cancelSearch()
+        }
     }
 
     private var searchContent: some View {
@@ -58,8 +60,12 @@ struct SearchView: View {
                 TextField("输入书名或作者", text: $viewModel.query)
                     .textFieldStyle(.roundedBorder)
                     .submitLabel(.search)
-                    .onSubmit(viewModel.search)
-                Button("搜索", action: viewModel.search)
+                    .onSubmit {
+                        viewModel.search()
+                    }
+                Button("搜索") {
+                    viewModel.search()
+                }
                     .disabled(viewModel.query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
             .padding()
@@ -67,7 +73,9 @@ struct SearchView: View {
             if viewModel.isLoading {
                 Spacer(); ProgressView("正在搜索…"); Spacer()
             } else if let errorMessage = viewModel.errorMessage {
-                StatusView(title: "搜索失败", message: errorMessage, retry: viewModel.search)
+                StatusView(title: "搜索失败", message: errorMessage) {
+                    viewModel.search()
+                }
             } else if viewModel.hasSearched && viewModel.results.isEmpty {
                 StatusView(title: "没有搜索结果", message: "请尝试其他关键词")
             } else {
@@ -76,7 +84,7 @@ struct SearchView: View {
                         NavigationLink {
                             BookDetailView(source: source, searchResult: book, dependencies: dependencies)
                         } label: {
-                            SearchResultRow(
+                            BookResultRow(
                                 book: book,
                                 isInLibrary: libraryRepository.contains(
                                     sourceURL: source.bookSourceUrl,
@@ -94,33 +102,5 @@ struct SearchView: View {
     private func select(identity: String?) {
         selectedIdentity = identity
         viewModel.selectSource(identity.flatMap(sourceStore.source(for:)))
-    }
-}
-
-private struct SearchResultRow: View {
-    let book: BookSearchResult
-    let isInLibrary: Bool
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            CoverImage(urlString: book.coverURL, width: 56, height: 76)
-            VStack(alignment: .leading, spacing: 5) {
-                HStack {
-                    Text(book.name).font(.headline)
-                    if isInLibrary {
-                        Text("已在书架")
-                            .font(.caption2.bold())
-                            .foregroundStyle(.blue)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(.blue.opacity(0.12), in: Capsule())
-                    }
-                }
-                Text(book.author).font(.subheadline).foregroundStyle(.secondary)
-                if let lastChapter = book.lastChapter, !lastChapter.isEmpty {
-                    Text(lastChapter).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                }
-            }
-        }
-        .padding(.vertical, 4)
     }
 }

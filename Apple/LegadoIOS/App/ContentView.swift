@@ -13,6 +13,11 @@ struct ContentView: View {
             .tabItem { Label("书架", systemImage: "books.vertical") }
 
             NavigationStack {
+                ExploreView(dependencies: dependencies)
+            }
+            .tabItem { Label("发现", systemImage: "safari") }
+
+            NavigationStack {
                 SourceListView(sourceStore: sourceStore, dependencies: dependencies)
             }
             .tabItem { Label("书源", systemImage: "network") }
