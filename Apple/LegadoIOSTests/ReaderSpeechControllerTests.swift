@@ -143,9 +143,15 @@ final class ReaderSpeechControllerTests: XCTestCase {
         let fixture = makeFixture()
         await fixture.loadAndStart()
         fixture.controller.selectSleepTimer(.fifteenMinutes)
-        await Task.yield()
+        for _ in 0..<300 {
+            if await fixture.sleeper.callCount == 1 { break }
+            try? await Task.sleep(for: .milliseconds(2))
+        }
         fixture.controller.selectSleepTimer(.sixtyMinutes)
-        await Task.yield()
+        for _ in 0..<300 {
+            if await fixture.sleeper.callCount == 2 { break }
+            try? await Task.sleep(for: .milliseconds(2))
+        }
         let callCount = await fixture.sleeper.callCount
         XCTAssertEqual(callCount, 2)
         fixture.controller.selectSleepTimer(.off)
