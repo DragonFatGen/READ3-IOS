@@ -9,6 +9,7 @@ struct AppDependencies {
     let readerSpeechController: ReaderSpeechController
     let bookmarkRepository: BookmarkRepository
     let readerPaginator: any ReaderPaginating
+    let cookieStore: any HTTPCookieStore
     let searchService: any BookSearching
     let exploreService: any BookExploring
     let bookInfoService: any BookInfoLoading
@@ -23,11 +24,14 @@ struct AppDependencies {
 
     @MainActor
     static func live() -> AppDependencies {
-        // Every runtime receives the same client value. URLSessionHTTPClient is
-        // currently stateless and creates ephemeral requests; keeping this
-        // composition root makes a future shared session/cookie implementation
-        // a single lifecycle change instead of a per-feature change.
-        let httpClient = URLSessionHTTPClient()
+        // One cookie actor and one session client span every source runtime.
+        // URLSession remains a cookie-free transport; persistence and redirect
+        // hop updates are owned by CookieSessionHTTPClient.
+        let cookieStore = PersistentHTTPCookieStore()
+        let httpClient = CookieSessionHTTPClient(
+            transport: URLSessionHTTPClient(),
+            cookieStore: cookieStore
+        )
         let javaScriptExecutor = JavaScriptCoreRuleJavaScriptExecutor()
         let cacheDirectory = FileManager.default.urls(
             for: .cachesDirectory,
@@ -77,6 +81,7 @@ struct AppDependencies {
             readerSpeechController: speechController,
             bookmarkRepository: BookmarkRepository(),
             readerPaginator: TextKitReaderPaginator(),
+            cookieStore: cookieStore,
             searchService: LegadoSearchService(
                 runtime: BookSourceSearchRuntime(
                     httpClient: httpClient,

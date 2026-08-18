@@ -141,7 +141,7 @@ public struct RequestBuilder: Sendable {
             throw HTTPError.invalidURL(parts.url)
         }
         let url = resolvedURL
-        let cookies = await cookieStore?.cookies(
+        let cookies = try await cookieStore?.cookies(
             for: url,
             sourceIdentifier: context.sourceIdentifier
         ) ?? []
@@ -162,6 +162,7 @@ public struct RequestBuilder: Sendable {
             charset: options.charset,
             redirectPolicy: context.redirectPolicy,
             cookies: cookies,
+            sessionIdentifier: context.sourceIdentifier,
             timeout: context.timeout,
             retryCount: max(0, options.retry),
             options: effectiveOptions
@@ -587,19 +588,21 @@ public struct RequestBuilder: Sendable {
     }
 
     private func mergeCookies(_ cookies: [HTTPCookie], into headers: inout HTTPHeaders) {
-        var values: [String: String] = [:]
-        for cookie in cookies { values[cookie.name] = cookie.value }
+        var values = cookies.map { ($0.name, $0.value) }
         if let custom = headers["Cookie"] {
             for pair in custom.split(separator: ";") {
                 let pieces = pair.split(separator: "=", maxSplits: 1)
                 if pieces.count == 2 {
-                    values[pieces[0].trimmingCharacters(in: .whitespaces)] =
-                        pieces[1].trimmingCharacters(in: .whitespaces)
+                    let name = pieces[0].trimmingCharacters(in: .whitespaces)
+                    let value = pieces[1].trimmingCharacters(in: .whitespaces)
+                    let insertionIndex = values.firstIndex { $0.0 == name } ?? values.endIndex
+                    values.removeAll { $0.0 == name }
+                    values.insert((name, value), at: min(insertionIndex, values.endIndex))
                 }
             }
         }
         if !values.isEmpty {
-            headers["Cookie"] = values.keys.sorted().map { "\($0)=\(values[$0]!)" }.joined(separator: "; ")
+            headers["Cookie"] = values.map { "\($0.0)=\($0.1)" }.joined(separator: "; ")
         }
     }
 

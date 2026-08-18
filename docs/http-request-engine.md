@@ -140,11 +140,12 @@ write, and read timeouts plus a 60-second call timeout. It retries the complete
 request `retry + 1` times until `Response.isSuccessful`, then returns the final
 unsuccessful response rather than throwing an HTTP-status exception.
 
-The URLSession adapter uses a 60-second request timeout by default, records
-followed redirects, supports a no-follow policy and a maximum hop count, retries
-on non-2xx status, and retains the last response. Transport and malformed
-response failures are typed separately. Exact OkHttp timeout partitioning,
-unsafe TLS behavior, Cronet, and authenticated proxies are not reproduced.
+The URLSession transport uses a 60-second request timeout by default and has its
+system cookie storage disabled. `CookieSessionHTTPClient` performs redirect hops,
+records them, enforces the maximum hop count, and persists each hop's cookies
+before constructing the next request. Transport and malformed response failures
+are typed separately. Exact OkHttp timeout partitioning, unsafe TLS behavior,
+Cronet, and authenticated proxies are not reproduced.
 
 ## Cookies
 
@@ -153,14 +154,17 @@ OkHttp jar saves each response cookie back into that store. Before a request,
 the source-key cookie is merged with a URL-option `Cookie` header, with the
 request-specific cookie values winning.
 
-Core defines `HTTPCookie`, `HTTPCookieStore`, and an actor-based
-`InMemoryHTTPCookieStore`. Stores can scope values by source identifier for test
-and source isolation; no shared `HTTPCookieStorage` is used. `RequestBuilder`
-merges stored cookies with a request Cookie header using the same override
-direction. The URLSession adapter parses basic Set-Cookie metadata into the
-response, while persistence remains an explicit caller/store action. Public
-suffix calculation, SameSite, Max-Age/Expires parsing, and a persistent jar are
-deferred.
+Core defines `HTTPCookie`, `HTTPCookieStore`, `HTTPCookieCollection`, an
+actor-based in-memory store, an independent `SetCookieParser`, and a cookie-aware
+HTTP client. Visibility follows URL domain/path globally; `sourceIdentifier`
+tracks ownership for removal rather than partitioning two sources on the same
+domain. Request-specific Cookie values override stored values. Set-Cookie
+responses—including redirect hops—are written automatically.
+
+Apple production uses one Keychain-backed actor store shared by all runtimes.
+Domain, host-only, path, Secure, HttpOnly, Expires, Max-Age, deletion, replacement,
+and restore cleanup are represented. See `docs/cookie-session.md` for the fixed
+Android differences and request-header precedence.
 
 ## Platform adapter and mock
 
@@ -177,6 +181,6 @@ requests. Tests remain deterministic and never access the public internet.
 - JavaScript, `java.ajax`, `java.get`, `java.post`, and URL-option `js`;
 - WebView loading, `webJs`, login pages, and cookie synchronization with WebView;
 - proxy execution, Cronet, unsafe TLS compatibility, multipart upload, `type`
-  byte/hex transformation, concurrent-rate throttling, and persistent cookies;
+  byte/hex transformation and concurrent-rate throttling;
 - statistical response charset detection beyond HTTP headers and HTML meta;
 - search, explore, book-info, TOC, content orchestration, and all UI.

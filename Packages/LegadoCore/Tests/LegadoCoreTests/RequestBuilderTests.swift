@@ -195,7 +195,7 @@ final class RequestBuilderTests: XCTestCase {
     func testCookieMergeRequestCookieWins() async throws {
         let store = InMemoryHTTPCookieStore()
         let url = try XCTUnwrap(URL(string: "https://books.example.invalid/path"))
-        await store.store([
+        try await store.store([
             HTTPCookie(name: "session", value: "stored", domain: "books.example.invalid"),
             HTTPCookie(name: "theme", value: "dark", domain: "books.example.invalid")
         ], for: url, sourceIdentifier: "source-a")
@@ -207,18 +207,18 @@ final class RequestBuilderTests: XCTestCase {
         XCTAssertEqual(request.cookies.count, 2)
     }
 
-    func testCookieStoresAreIsolatedBySource() async throws {
+    func testCookieStoreIsSharedAcrossSourcesForSameDomain() async throws {
         let store = InMemoryHTTPCookieStore()
         let url = try XCTUnwrap(URL(string: "https://example.invalid/"))
-        await store.store(
+        try await store.store(
             [HTTPCookie(name: "id", value: "one", domain: "example.invalid")],
             for: url,
             sourceIdentifier: "one"
         )
-        let sourceOne = await store.cookies(for: url, sourceIdentifier: "one")
-        let sourceTwo = await store.cookies(for: url, sourceIdentifier: "two")
+        let sourceOne = try await store.cookies(for: url, sourceIdentifier: "one")
+        let sourceTwo = try await store.cookies(for: url, sourceIdentifier: "two")
         XCTAssertEqual(sourceOne.map(\.value), ["one"])
-        XCTAssertTrue(sourceTwo.isEmpty)
+        XCTAssertEqual(sourceTwo.map(\.value), ["one"])
     }
 
     func testDeterministicBuildAndContextIsolation() async throws {

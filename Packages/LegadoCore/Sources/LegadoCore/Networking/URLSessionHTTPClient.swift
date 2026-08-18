@@ -4,6 +4,8 @@ import FoundationNetworking
 #endif
 
 public struct URLSessionHTTPClient: HTTPClient {
+    private let setCookieParser = SetCookieParser()
+
     public init() {}
 
     public func send(_ request: HTTPRequest) async throws -> HTTPResponse {
@@ -39,7 +41,7 @@ public struct URLSessionHTTPClient: HTTPClient {
                 data: data,
                 finalURL: finalURL,
                 redirects: redirectDelegate.redirects,
-                cookies: parseCookies(headers["Set-Cookie"], responseURL: finalURL)
+                cookies: setCookieParser.parse(headers["Set-Cookie"], responseURL: finalURL)
             )
         } catch let error as HTTPError {
             throw error
@@ -71,38 +73,6 @@ public struct URLSessionHTTPClient: HTTPClient {
         }
     }
 
-    private func parseCookies(_ header: String?, responseURL: URL) -> [HTTPCookie] {
-        guard let header else { return [] }
-        return header.split(whereSeparator: { $0 == "\n" }).compactMap { line in
-            let parts = line.split(separator: ";").map(String.init)
-            guard let first = parts.first else { return nil }
-            let pair = first.split(separator: "=", maxSplits: 1)
-            guard pair.count == 2, let host = responseURL.host else { return nil }
-            var domain = host
-            var path = "/"
-            var secure = false
-            var httpOnly = false
-            for attribute in parts.dropFirst() {
-                let item = attribute.trimmingCharacters(in: .whitespacesAndNewlines)
-                let field = item.split(separator: "=", maxSplits: 1).map(String.init)
-                switch field[0].lowercased() {
-                case "domain" where field.count == 2: domain = field[1].trimmingCharacters(in: CharacterSet(charactersIn: "."))
-                case "path" where field.count == 2: path = field[1]
-                case "secure": secure = true
-                case "httponly": httpOnly = true
-                default: break
-                }
-            }
-            return HTTPCookie(
-                name: String(pair[0]),
-                value: String(pair[1]),
-                domain: domain,
-                path: path,
-                isSecure: secure,
-                isHTTPOnly: httpOnly
-            )
-        }
-    }
 }
 
 private final class RedirectDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {

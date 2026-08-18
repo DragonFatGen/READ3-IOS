@@ -221,3 +221,9 @@ no automatic source headers/cookies, and status errors thrown.
 
 WebView, `webJs`, login, browser DOM, source/book/chapter bindings, persistent JS
 state, Android reflection, and complete Rhino parity remain separate stages.
+
+The shared `CookieSessionHTTPClient` and `HTTPCookieStore` now provide the cookie
+lifecycle that a future bounded worker transport can reuse. This does not change
+the synchronous/async gate: no semaphore, condition variable, run-loop polling,
+or blocking Task bridge is permitted. `java.ajax/get/post/head`, `java.getCookie`,
+and cookie-manager script bindings remain deferred.

@@ -22,6 +22,7 @@ public struct HTTPRequest: Equatable, Sendable {
     public let charset: String?
     public let redirectPolicy: HTTPRedirectPolicy
     public let cookies: [HTTPCookie]
+    public let sessionIdentifier: String?
     public let timeout: TimeInterval
     public let retryCount: Int
     public let options: RequestOptions
@@ -35,6 +36,7 @@ public struct HTTPRequest: Equatable, Sendable {
         charset: String? = nil,
         redirectPolicy: HTTPRedirectPolicy = .legadoDefault,
         cookies: [HTTPCookie] = [],
+        sessionIdentifier: String? = nil,
         timeout: TimeInterval = 60,
         retryCount: Int = 0,
         options: RequestOptions = RequestOptions()
@@ -47,6 +49,7 @@ public struct HTTPRequest: Equatable, Sendable {
         self.charset = charset
         self.redirectPolicy = redirectPolicy
         self.cookies = cookies
+        self.sessionIdentifier = sessionIdentifier
         self.timeout = timeout
         self.retryCount = retryCount
         self.options = options
