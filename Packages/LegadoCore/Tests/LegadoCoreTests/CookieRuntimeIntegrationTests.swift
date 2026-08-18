@@ -103,7 +103,7 @@ private actor RuntimeCookieTransport: HTTPClient {
             headers: HTTPHeaders(["Content-Type": "text/html; charset=utf-8"]),
             data: Data(body.utf8),
             finalURL: request.url,
-            cookies: [HTTPCookie(
+            cookies: [LegadoCore.HTTPCookie(
                 name: "phase", value: cookieValue, domain: "example.invalid", isHostOnly: true
             )]
         )

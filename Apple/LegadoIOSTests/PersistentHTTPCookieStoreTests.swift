@@ -9,8 +9,8 @@ final class PersistentHTTPCookieStoreTests: XCTestCase {
         let first = PersistentHTTPCookieStore(persistence: persistence)
         let target = try url("https://example.invalid/account")
         try await first.store([
-            HTTPCookie(name: "session", value: "abc", domain: "example.invalid"),
-            HTTPCookie(
+            LegadoCore.HTTPCookie(name: "session", value: "abc", domain: "example.invalid"),
+            LegadoCore.HTTPCookie(
                 name: "lasting", value: "yes", domain: "example.invalid",
                 expires: Date().addingTimeInterval(3_600)
             )
@@ -24,7 +24,7 @@ final class PersistentHTTPCookieStoreTests: XCTestCase {
 
     func testExpiredCookieIsNotRestored() async throws {
         let collection = HTTPCookieCollection(records: [StoredHTTPCookie(
-            cookie: HTTPCookie(
+            cookie: LegadoCore.HTTPCookie(
                 name: "expired", value: "x", domain: "example.invalid",
                 expires: Date(timeIntervalSince1970: 1)
             ),
@@ -47,10 +47,10 @@ final class PersistentHTTPCookieStoreTests: XCTestCase {
         let store = PersistentHTTPCookieStore(persistence: persistence)
         let target = try url("https://example.invalid/")
         try await store.store([
-            HTTPCookie(name: "a", value: "1", domain: "example.invalid")
+            LegadoCore.HTTPCookie(name: "a", value: "1", domain: "example.invalid")
         ], for: target, sourceIdentifier: "source-a")
         try await store.store([
-            HTTPCookie(name: "b", value: "2", domain: "example.invalid")
+            LegadoCore.HTTPCookie(name: "b", value: "2", domain: "example.invalid")
         ], for: target, sourceIdentifier: "source-b")
 
         let globallyVisible = try await store.cookies(for: target, sourceIdentifier: "source-c")
@@ -68,7 +68,7 @@ final class PersistentHTTPCookieStoreTests: XCTestCase {
             for index in 0..<30 {
                 group.addTask {
                     try? await store.store([
-                        HTTPCookie(
+                        LegadoCore.HTTPCookie(
                             name: "c\(index)", value: "\(index)", domain: "example.invalid"
                         )
                     ], for: target, sourceIdentifier: "source")

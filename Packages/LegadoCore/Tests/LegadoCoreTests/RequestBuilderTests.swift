@@ -196,8 +196,8 @@ final class RequestBuilderTests: XCTestCase {
         let store = InMemoryHTTPCookieStore()
         let url = try XCTUnwrap(URL(string: "https://books.example.invalid/path"))
         try await store.store([
-            HTTPCookie(name: "session", value: "stored", domain: "books.example.invalid"),
-            HTTPCookie(name: "theme", value: "dark", domain: "books.example.invalid")
+            LegadoCore.HTTPCookie(name: "session", value: "stored", domain: "books.example.invalid"),
+            LegadoCore.HTTPCookie(name: "theme", value: "dark", domain: "books.example.invalid")
         ], for: url, sourceIdentifier: "source-a")
         let request = try await RequestBuilder(cookieStore: store).build(
             #"https://books.example.invalid/path,{"headers":{"Cookie":"session=request"}}"#,
@@ -211,7 +211,7 @@ final class RequestBuilderTests: XCTestCase {
         let store = InMemoryHTTPCookieStore()
         let url = try XCTUnwrap(URL(string: "https://example.invalid/"))
         try await store.store(
-            [HTTPCookie(name: "id", value: "one", domain: "example.invalid")],
+            [LegadoCore.HTTPCookie(name: "id", value: "one", domain: "example.invalid")],
             for: url,
             sourceIdentifier: "one"
         )

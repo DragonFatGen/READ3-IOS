@@ -11,7 +11,7 @@ final class HTTPCookieSessionTests: XCTestCase {
     }
 
     func testDomainHostOnlyPathSecureAndHTTPOnlyMetadata() throws {
-        let hostOnly = HTTPCookie(
+        let hostOnly = LegadoCore.HTTPCookie(
             name: "host", value: "1", domain: "example.invalid",
             path: "/books", isSecure: true, isHTTPOnly: true, isHostOnly: true
         )
@@ -21,7 +21,7 @@ final class HTTPCookieSessionTests: XCTestCase {
         XCTAssertFalse(hostOnly.matches(try url("https://example.invalid/bookstore")))
         XCTAssertTrue(hostOnly.isHTTPOnly)
 
-        let domain = HTTPCookie(name: "domain", value: "1", domain: "example.invalid")
+        let domain = LegadoCore.HTTPCookie(name: "domain", value: "1", domain: "example.invalid")
         XCTAssertTrue(domain.matches(try url("https://sub.example.invalid/")))
     }
 
@@ -49,11 +49,11 @@ final class HTTPCookieSessionTests: XCTestCase {
         let store = InMemoryHTTPCookieStore()
         let target = try url("https://example.invalid/a/page")
         try await store.store([
-            HTTPCookie(name: "id", value: "root", domain: "example.invalid", path: "/"),
-            HTTPCookie(name: "id", value: "path", domain: "example.invalid", path: "/a")
+            LegadoCore.HTTPCookie(name: "id", value: "root", domain: "example.invalid", path: "/"),
+            LegadoCore.HTTPCookie(name: "id", value: "path", domain: "example.invalid", path: "/a")
         ], for: target, sourceIdentifier: "source-a")
         try await store.store([
-            HTTPCookie(name: "id", value: "new", domain: "example.invalid", path: "/a")
+            LegadoCore.HTTPCookie(name: "id", value: "new", domain: "example.invalid", path: "/a")
         ], for: target, sourceIdentifier: "source-a")
 
         let replaced = try await store.cookies(for: target, sourceIdentifier: "source-b")
@@ -71,11 +71,11 @@ final class HTTPCookieSessionTests: XCTestCase {
         let store = InMemoryHTTPCookieStore()
         let target = try url("https://same.example.invalid/")
         try await store.store([
-            HTTPCookie(
+            LegadoCore.HTTPCookie(
                 name: "expired", value: "x", domain: "same.example.invalid",
                 expires: Date(timeIntervalSince1970: 1)
             ),
-            HTTPCookie(name: "shared", value: "1", domain: "same.example.invalid")
+            LegadoCore.HTTPCookie(name: "shared", value: "1", domain: "same.example.invalid")
         ], for: target, sourceIdentifier: "source-a")
 
         let shared = try await store.cookies(for: target, sourceIdentifier: "source-b")
@@ -89,8 +89,8 @@ final class HTTPCookieSessionTests: XCTestCase {
         let store = InMemoryHTTPCookieStore()
         let target = try url("https://example.invalid/path")
         try await store.store([
-            HTTPCookie(name: "a", value: "1", domain: "example.invalid"),
-            HTTPCookie(name: "b", value: "2", domain: "example.invalid")
+            LegadoCore.HTTPCookie(name: "a", value: "1", domain: "example.invalid"),
+            LegadoCore.HTTPCookie(name: "b", value: "2", domain: "example.invalid")
         ], for: target, sourceIdentifier: "source")
         let request = try await RequestBuilder(cookieStore: store).build(
             #"https://example.invalid/path,{"headers":{"Cookie":"c=5; d=6"}}"#,
@@ -103,7 +103,7 @@ final class HTTPCookieSessionTests: XCTestCase {
     func testRedirectStoresCookieBeforeNextHopAndFinalResponsePersistsAutomatically() async throws {
         let start = try url("https://example.invalid/start")
         let next = try url("https://example.invalid/next")
-        let redirectCookie = HTTPCookie(
+        let redirectCookie = LegadoCore.HTTPCookie(
             name: "token", value: "abc", domain: "example.invalid", isHostOnly: true
         )
         let transport = RedirectCookieTransport(start: start, next: next, cookie: redirectCookie)
@@ -129,7 +129,7 @@ final class HTTPCookieSessionTests: XCTestCase {
             for index in 0..<40 {
                 group.addTask {
                     try? await store.store([
-                        HTTPCookie(
+                        LegadoCore.HTTPCookie(
                             name: "c\(index)", value: "\(index)", domain: "example.invalid"
                         )
                     ], for: target, sourceIdentifier: "source")

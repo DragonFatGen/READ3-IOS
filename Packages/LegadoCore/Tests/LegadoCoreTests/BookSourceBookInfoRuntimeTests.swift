@@ -182,7 +182,7 @@ final class BookSourceBookInfoRuntimeTests: XCTestCase {
     func testSourceHeaderAndCookieRemainRequestBuilderResponsibilities() async throws {
         let cookieStore = InMemoryHTTPCookieStore()
         try await cookieStore.store([
-            HTTPCookie(name: "session", value: "abc", domain: "example.invalid")
+            LegadoCore.HTTPCookie(name: "session", value: "abc", domain: "example.invalid")
         ], for: try XCTUnwrap(URL(string: "https://example.invalid")), sourceIdentifier: "https://example.invalid")
         let response = try response(fixture: "html-basic.html")
         let client = MockHTTPClient(response: response)
