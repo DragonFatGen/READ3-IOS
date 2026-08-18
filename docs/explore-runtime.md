@@ -115,11 +115,31 @@ variables persisted by URL-stage `@put`, matching Android's shared `RuleData`; p
 is not otherwise injected into `AnalyzeRule` fields. Core deliberately does not
 expose Android globals, mutable caches, or arbitrary native APIs.
 
+## iOS Explore presentation compatibility
+
+The iOS application caches parsed categories in `ExploreViewModel`, keyed by
+`bookSourceUrl`, for the lifetime of that view model. Switching sources and then
+returning does not execute category JavaScript again. Pull-to-refresh reloads only
+the current book list; the toolbar's explicit category refresh clears only the
+current source's category cache.
+
+Pagination follows `ExploreShowActivity.upData`: an empty page stops loading, as
+does a page whose first and last `SearchBook` are both already present. Android's
+`SearchBook.equals` compares only `bookUrl`, so iOS uses `BookSearchResult.bookURL`
+for the same boundary check. Otherwise the complete page is appended in returned
+order, including individual duplicates.
+
+The category list remains flat and ordered. Items without a URL are noninteractive
+headings. SwiftUI honors `layout_wrapBefore` and near-full-width
+`layout_flexBasisPercent` as row breaks. It intentionally does not emulate Android
+Flexbox's `layout_flexGrow`, `layout_flexShrink`, or `layout_alignSelf`; adaptive
+grid sizing is used so long localized titles wrap safely.
+
 The following remain outside this phase:
 
 - production `java.ajax`, `java.get`, `java.post`, and `java.head` (reported as an
   explicit unsupported capability rather than synchronously waiting on network);
 - WebView, `webJs`, source login UI, and `loginCheckJs`;
-- Android's application-level generated-category cache;
+- cross-launch persistence of generated categories;
 - cookie-backed persistent user accounts;
-- Explore SwiftUI and its duplicate-page/no-more-data presentation policy.
+- pixel-identical Android Flexbox layout.

@@ -201,6 +201,21 @@ final class ExploreViewModelTests: XCTestCase {
         XCTAssertFalse(viewModel.hasMore)
     }
 
+    func testCategoryFailureShowsErrorWithoutStartingBookRequest() async {
+        let source = exploreSource("a")
+        let service = FakeExploreService()
+        await service.setCategoryFailure(for: source)
+        let viewModel = ExploreViewModel(service: service)
+
+        viewModel.updateAvailableSources([source])
+        await wait { viewModel.categoryErrorMessage != nil }
+
+        XCTAssertTrue(viewModel.categories.isEmpty)
+        XCTAssertNil(viewModel.selectedCategoryIndex)
+        let requests = await service.exploreRequests
+        XCTAssertTrue(requests.isEmpty)
+    }
+
     func testLoadMoreFailurePreservesExistingResultsAndCanRetry() async {
         let (viewModel, service, source) = await preparedViewModel(firstPage: [exploreBook("1")])
         await service.setFailure(source: source, url: "/list", page: 2)
@@ -232,6 +247,29 @@ final class ExploreViewModelTests: XCTestCase {
         await wait { viewModel.results.first?.bookURL.hasSuffix("/fast") == true }
         try? await Task.sleep(for: .milliseconds(70))
 
+        XCTAssertEqual(viewModel.results.map(\.bookURL), ["https://books.example/fast"])
+    }
+
+    func testStaleRequestCannotOverwriteNewSource() async {
+        let first = exploreSource("first")
+        let second = exploreSource("second")
+        let service = FakeExploreService()
+        await service.setCategories([.init(title: "列表", url: "/list")], for: first)
+        await service.setCategories([.init(title: "列表", url: "/list")], for: second)
+        await service.setBooks(
+            [exploreBook("slow")], source: first, url: "/list", page: 1,
+            delay: .milliseconds(50), ignoreCancellation: true
+        )
+        await service.setBooks([exploreBook("fast")], source: second, url: "/list", page: 1)
+        let viewModel = ExploreViewModel(service: service)
+        viewModel.updateAvailableSources([first, second])
+        await wait { viewModel.source == first && viewModel.isLoading }
+
+        viewModel.selectSource(second)
+        await wait { viewModel.results.first?.bookURL.hasSuffix("/fast") == true }
+        try? await Task.sleep(for: .milliseconds(70))
+
+        XCTAssertEqual(viewModel.source, second)
         XCTAssertEqual(viewModel.results.map(\.bookURL), ["https://books.example/fast"])
     }
 
@@ -332,12 +370,17 @@ private actor FakeExploreService: BookExploring {
     }
 
     private var categoriesBySource: [String: [ExploreKind]] = [:]
+    private var categoryFailures: Set<String> = []
     private var responses: [String: Response] = [:]
     private(set) var categoryRequests: [String] = []
     private(set) var exploreRequests: [ExploreRequest] = []
 
     func setCategories(_ categories: [ExploreKind], for source: BookSource) {
         categoriesBySource[source.bookSourceUrl] = categories
+    }
+
+    func setCategoryFailure(for source: BookSource) {
+        categoryFailures.insert(source.bookSourceUrl)
     }
 
     func setBooks(
@@ -369,6 +412,9 @@ private actor FakeExploreService: BookExploring {
 
     func categories(source: BookSource) async throws -> [ExploreKind] {
         categoryRequests.append(source.bookSourceUrl)
+        if categoryFailures.contains(source.bookSourceUrl) {
+            throw FakeExploreError.expected
+        }
         return categoriesBySource[source.bookSourceUrl] ?? []
     }
 
