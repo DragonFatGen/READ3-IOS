@@ -51,6 +51,7 @@ struct TOCView: View {
                                 contentService: dependencies.contentService,
                                 progressStore: dependencies.libraryRepository,
                                 bookmarkStore: dependencies.bookmarkRepository,
+                                annotationStore: dependencies.annotationRepository,
                                 settingsStore: dependencies.readerSettingsStore,
                                 paginator: dependencies.readerPaginator,
                                 speechController: dependencies.readerSpeechController

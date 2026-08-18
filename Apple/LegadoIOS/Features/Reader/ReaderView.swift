@@ -12,7 +12,10 @@ struct ReaderView: View {
     @State private var showsTOC = false
     @State private var showsSettings = false
     @State private var showsBookmarks = false
+    @State private var showsAnnotations = false
+    @State private var showsAnnotationComposer = false
     @State private var showsSpeechControls = false
+    @State private var pendingTextSelection: ReaderTextSelection?
     @State private var scrollMetrics = ReaderScrollMetrics.zero
     @State private var sliderProgress = 0.0
     @State private var isEditingProgress = false
@@ -26,6 +29,7 @@ struct ReaderView: View {
         contentService: any ChapterContentLoading,
         progressStore: any ReadingProgressStoring,
         bookmarkStore: any BookmarkStoring,
+        annotationStore: any ReaderAnnotationStoring,
         settingsStore: ReaderSettingsStore,
         paginator: any ReaderPaginating,
         speechController: ReaderSpeechController
@@ -42,6 +46,7 @@ struct ReaderView: View {
             contentService: contentService,
             progressStore: progressStore,
             bookmarkStore: bookmarkStore,
+            annotationStore: annotationStore,
             paginator: paginator,
             layoutMode: settingsStore.settings.layoutMode
         ))
@@ -60,6 +65,7 @@ struct ReaderView: View {
                     settingsStore.settings.theme.backgroundColor.ignoresSafeArea()
                     readerContent(proxy: proxy, viewport: viewport)
                     if controlsVisible { controlsOverlay(viewport: viewport) }
+                    if pendingTextSelection != nil { selectionActionsOverlay(viewport: viewport) }
                 }
                 .animation(.easeInOut(duration: 0.18), value: controlsVisible)
                 .toolbar(.hidden, for: .navigationBar)
@@ -85,6 +91,29 @@ struct ReaderView: View {
                         onDelete: viewModel.removeBookmark
                     )
                 }
+                .sheet(isPresented: $showsAnnotations) {
+                    ReaderAnnotationsSheet(
+                        annotations: viewModel.annotations,
+                        onSelect: { annotation in
+                            showsAnnotations = false
+                            viewModel.goToAnnotation(annotation)
+                        },
+                        onDelete: viewModel.removeAnnotation,
+                        onUpdate: viewModel.updateAnnotation
+                    )
+                }
+                .sheet(isPresented: $showsAnnotationComposer) {
+                    if let selection = pendingTextSelection {
+                        ReaderAnnotationComposerSheet(selection: selection) { style, note in
+                            _ = viewModel.createAnnotation(
+                                selection: selection,
+                                style: style,
+                                note: note
+                            )
+                            pendingTextSelection = nil
+                        }
+                    }
+                }
                 .sheet(isPresented: $showsSpeechControls) {
                     ReaderSpeechControlView(
                         controller: speechController,
@@ -105,6 +134,7 @@ struct ReaderView: View {
                     viewModel.setLayoutMode(mode)
                 }
                 .onChange(of: viewModel.content) { _ in
+                    pendingTextSelection = nil
                     guard viewModel.layoutMode == .scroll else { return }
                     restoreScrollPosition(proxy)
                 }
@@ -146,6 +176,8 @@ struct ReaderView: View {
             ReaderPagedContentView(
                 pages: viewModel.pages,
                 currentPageIndex: viewModel.currentPageIndex,
+                fullText: viewModel.content?.content ?? "",
+                annotations: viewModel.currentChapterAnnotations,
                 settings: settingsStore.settings,
                 viewportWidth: width,
                 canTurnPrevious: viewModel.currentPageIndex > 0
@@ -154,7 +186,9 @@ struct ReaderView: View {
                     || viewModel.nextChapterAvailable,
                 turnPrevious: viewModel.turnPageBackward,
                 turnNext: viewModel.turnPageForward,
-                toggleControls: { withAnimation { controlsVisible.toggle() } }
+                toggleControls: { withAnimation { controlsVisible.toggle() } },
+                onSelectionChanged: { pendingTextSelection = $0 },
+                selectionActive: pendingTextSelection != nil
             )
         } else if viewModel.isLoading {
             loadingView
@@ -178,12 +212,15 @@ struct ReaderView: View {
                     Text(viewModel.currentChapter?.name ?? "")
                         .font(.headline)
                         .foregroundStyle(settingsStore.settings.theme.secondaryColor)
-                    Text(result.content)
-                        .font(.system(size: CGFloat(settingsStore.settings.fontSize)))
-                        .lineSpacing(CGFloat(settingsStore.settings.lineSpacing))
-                        .foregroundStyle(settingsStore.settings.theme.foregroundColor)
+                    ReaderSelectableTextView(
+                        fullText: result.content,
+                        displayedText: result.content,
+                        displayedUTF16Range: 0..<result.content.utf16.count,
+                        annotations: viewModel.currentChapterAnnotations,
+                        settings: settingsStore.settings,
+                        onSelectionChanged: { pendingTextSelection = $0 }
+                    )
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
                         .overlay { restorationAnchors }
                 }
                 .padding(.horizontal, CGFloat(settingsStore.settings.horizontalPadding))
@@ -259,6 +296,9 @@ struct ReaderView: View {
             Menu {
                 Button { showsTOC = true } label: { Label("目录", systemImage: "list.bullet") }
                 Button { showsBookmarks = true } label: { Label("书签列表", systemImage: "bookmark.square") }
+                Button { showsAnnotations = true } label: {
+                    Label("高亮与批注", systemImage: "highlighter")
+                }
                 Button { showsSettings = true } label: { Label("阅读设置", systemImage: "textformat.size") }
                 Button { showsSpeechControls = true } label: {
                     Label("朗读控制", systemImage: "speaker.wave.2")
@@ -340,6 +380,26 @@ struct ReaderView: View {
         .frame(minHeight: ReaderLayoutMetrics.bottomControlBarHeight)
         .foregroundStyle(settingsStore.settings.theme.foregroundColor)
         .background(.ultraThinMaterial)
+    }
+
+    private func selectionActionsOverlay(viewport: ReaderViewport) -> some View {
+        VStack {
+            Spacer()
+            HStack(spacing: 14) {
+                Button {
+                    showsAnnotationComposer = true
+                } label: {
+                    Label("添加高亮", systemImage: "highlighter")
+                }
+                Button("取消选择", role: .cancel) {
+                    pendingTextSelection = nil
+                }
+            }
+            .buttonStyle(.borderedProminent)
+            .padding(10)
+            .background(.ultraThinMaterial, in: Capsule())
+            .padding(.bottom, viewport.safeAreaInsets.bottom + (controlsVisible ? 142 : 12))
+        }
     }
 
     private func controlButton(_ title: String, icon: String, action: @escaping () -> Void) -> some View {

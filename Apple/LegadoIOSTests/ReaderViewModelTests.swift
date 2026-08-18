@@ -360,11 +360,88 @@ final class ReaderViewModelTests: XCTestCase {
         XCTAssertEqual(model.consumeRestorationProgress(), 0.35)
     }
 
+    func testCreateUpdateAndDeleteAnnotationPreservesBookmarkAndProgress() async throws {
+        let progress = MemoryProgressStore()
+        let bookmarks = MemoryBookmarkStore()
+        let annotations = MemoryAnnotationStore()
+        let model = makeModel(
+            service: RecordingContentService(),
+            store: progress,
+            bookmarkStore: bookmarks,
+            annotationStore: annotations
+        )
+        model.loadInitialChapter()
+        await waitUntil { model.content != nil }
+        model.updateProgress(0.5)
+        model.toggleBookmark()
+
+        let created = try XCTUnwrap(model.createAnnotation(
+            selection: ReaderTextSelection(
+                utf16Range: NSRange(location: 0, length: 2),
+                selectedText: "ignored"
+            ),
+            style: .green,
+            note: "  重点  "
+        ))
+        XCTAssertEqual(created.selectedText, "正文")
+        XCTAssertEqual(created.note, "重点")
+        XCTAssertEqual(model.annotations.count, 1)
+        XCTAssertEqual(model.chapterProgress, 0.5)
+        XCTAssertEqual(model.bookmarks.count, 1)
+
+        model.updateAnnotation(id: created.id, style: .pink, note: "新批注")
+        XCTAssertEqual(model.annotations.first?.style, .pink)
+        XCTAssertEqual(model.annotations.first?.note, "新批注")
+        model.removeAnnotation(id: created.id)
+        XCTAssertTrue(model.annotations.isEmpty)
+        XCTAssertEqual(model.chapterProgress, 0.5)
+        XCTAssertEqual(model.bookmarks.count, 1)
+    }
+
+    func testAnnotationJumpLoadsCorrectChapterAndUTF16Position() async {
+        let annotations = MemoryAnnotationStore()
+        let annotation = testAnnotation(chapter: 1, location: 3, selectedText: "1")
+        annotations.save(annotation)
+        let model = makeModel(
+            service: RecordingContentService(),
+            store: MemoryProgressStore(),
+            annotationStore: annotations
+        )
+        model.loadInitialChapter()
+        await waitUntil { model.content?.content == "正文 0" }
+
+        model.goToAnnotation(annotation)
+        await waitUntil { model.currentChapterIndex == 1 && model.content?.content == "正文 1" }
+        XCTAssertEqual(model.currentNormalizedProgress, 0.75)
+        XCTAssertEqual(model.consumeRestorationProgress(), 0.75)
+    }
+
+    func testPagedAnnotationJumpUsesExistingPageUTF16Ranges() async {
+        let annotations = MemoryAnnotationStore()
+        let annotation = testAnnotation(chapter: 1, location: 2, selectedText: " ")
+        annotations.save(annotation)
+        let model = makeModel(
+            service: RecordingContentService(),
+            store: MemoryProgressStore(),
+            annotationStore: annotations,
+            paginator: FakeReaderPaginator(pageCount: 4),
+            layoutMode: .paged
+        )
+        model.updatePaginationConfiguration(testConfiguration())
+        model.loadInitialChapter()
+        await waitUntil { model.pages.count == 4 }
+
+        model.goToAnnotation(annotation)
+        await waitUntil { model.currentChapterIndex == 1 && model.pages.count == 4 }
+        XCTAssertEqual(model.currentPageIndex, 2)
+    }
+
     private func makeModel(
         initialIndex: Int = 0,
         service: any ChapterContentLoading,
         store: MemoryProgressStore,
         bookmarkStore: (any BookmarkStoring)? = nil,
+        annotationStore: (any ReaderAnnotationStoring)? = nil,
         paginator: any ReaderPaginating = FakeReaderPaginator(pageCount: 3),
         layoutMode: ReaderLayoutMode = .scroll
     ) -> ReaderViewModel {
@@ -373,6 +450,7 @@ final class ReaderViewModelTests: XCTestCase {
             chapters: (0..<3).map(testChapter), initialChapterIndex: initialIndex,
             contentService: service, progressStore: store,
             bookmarkStore: bookmarkStore,
+            annotationStore: annotationStore,
             paginator: paginator, layoutMode: layoutMode
         )
     }
@@ -384,6 +462,22 @@ final class ReaderViewModelTests: XCTestCase {
             chapterURL: testChapter(index: chapter).url,
             chapterName: testChapter(index: chapter).name,
             chapterProgress: progress, previewText: "preview", createdAt: Date()
+        )
+    }
+
+    private func testAnnotation(
+        chapter: Int,
+        location: Int,
+        selectedText: String
+    ) -> ReaderAnnotation {
+        ReaderAnnotation(
+            id: UUID(), bookID: "book", sourceIdentity: testSource().bookSourceUrl,
+            bookIdentity: testBookInfo().bookURL, chapterIndex: chapter,
+            chapterURL: testChapter(index: chapter).url,
+            chapterName: testChapter(index: chapter).name,
+            utf16Location: location, utf16Length: (selectedText as NSString).length,
+            chapterUTF16Length: 4, selectedText: selectedText,
+            style: .yellow, note: nil, createdAt: Date(), updatedAt: Date()
         )
     }
 
@@ -471,6 +565,25 @@ private final class MemoryBookmarkStore: BookmarkStoring {
         }
     }
     func add(_ bookmark: ReaderBookmark) { values.append(bookmark) }
+    func remove(id: UUID) { values.removeAll { $0.id == id } }
+    func removeAll(for bookID: String) { values.removeAll { $0.bookID == bookID } }
+}
+
+@MainActor
+private final class MemoryAnnotationStore: ReaderAnnotationStoring {
+    private var values: [ReaderAnnotation] = []
+    func annotations(for bookID: String) -> [ReaderAnnotation] {
+        values.filter { $0.bookID == bookID }.sorted {
+            ($0.chapterIndex, $0.utf16Location) < ($1.chapterIndex, $1.utf16Location)
+        }
+    }
+    func save(_ annotation: ReaderAnnotation) {
+        if let index = values.firstIndex(where: { $0.id == annotation.id }) {
+            values[index] = annotation
+        } else {
+            values.append(annotation)
+        }
+    }
     func remove(id: UUID) { values.removeAll { $0.id == id } }
     func removeAll(for bookID: String) { values.removeAll { $0.bookID == bookID } }
 }

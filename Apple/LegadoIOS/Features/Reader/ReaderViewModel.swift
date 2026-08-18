@@ -16,6 +16,7 @@ final class ReaderViewModel: ObservableObject {
     @Published private(set) var isPaginating = false
     @Published private(set) var scrollRestorationID = 0
     @Published private(set) var bookmarks: [ReaderBookmark] = []
+    @Published private(set) var annotations: [ReaderAnnotation] = []
 
     let source: BookSource
     let book: BookInfoResult
@@ -26,6 +27,7 @@ final class ReaderViewModel: ObservableObject {
     private let paginator: any ReaderPaginating
     private weak var progressStore: (any ReadingProgressStoring)?
     private weak var bookmarkStore: (any BookmarkStoring)?
+    private weak var annotationStore: (any ReaderAnnotationStoring)?
     private weak var speechController: ReaderSpeechController?
     private var loadTask: Task<Void, Never>?
     private var preloadTask: Task<Void, Never>?
@@ -35,6 +37,7 @@ final class ReaderViewModel: ObservableObject {
     private var paginationID = UUID()
     private var paginationConfiguration: PaginationConfiguration?
     private var chapterEntryPosition: ChapterEntryPosition = .restore
+    private var pendingAnnotationJump: ReaderAnnotation?
 
     init(
         source: BookSource,
@@ -45,6 +48,7 @@ final class ReaderViewModel: ObservableObject {
         contentService: any ChapterContentLoading,
         progressStore: any ReadingProgressStoring,
         bookmarkStore: (any BookmarkStoring)? = nil,
+        annotationStore: (any ReaderAnnotationStoring)? = nil,
         paginator: any ReaderPaginating = TextKitReaderPaginator(),
         layoutMode: ReaderLayoutMode = .scroll
     ) {
@@ -55,6 +59,7 @@ final class ReaderViewModel: ObservableObject {
         self.contentService = contentService
         self.progressStore = progressStore
         self.bookmarkStore = bookmarkStore
+        self.annotationStore = annotationStore
         self.paginator = paginator
         self.layoutMode = layoutMode
         currentChapterIndex = min(max(initialChapterIndex, 0), max(chapters.count - 1, 0))
@@ -64,6 +69,7 @@ final class ReaderViewModel: ObservableObject {
             restorationProgress = saved.normalizedChapterProgress
         }
         bookmarks = bookmarkStore?.bookmarks(for: libraryBookID) ?? []
+        annotations = annotationStore?.annotations(for: libraryBookID) ?? []
     }
 
     deinit {
@@ -79,6 +85,13 @@ final class ReaderViewModel: ObservableObject {
     var nextChapterAvailable: Bool { currentChapterIndex + 1 < chapters.count }
     var currentNormalizedProgress: Double { chapterProgress }
     var isCurrentPositionBookmarked: Bool { matchingCurrentBookmark() != nil }
+    var currentChapterAnnotations: [ReaderAnnotation] {
+        guard let chapter = currentChapter else { return [] }
+        return annotations.filter {
+            if !$0.chapterURL.isEmpty { return $0.chapterURL == chapter.url }
+            return $0.chapterIndex == currentChapterIndex
+        }
+    }
     var pageProgressText: String? {
         guard layoutMode == .paged, !pages.isEmpty else { return nil }
         return "\(currentPageIndex + 1) / \(pages.count)"
@@ -244,6 +257,78 @@ final class ReaderViewModel: ObservableObject {
         else { saveTask?.cancel() }
     }
 
+    @discardableResult
+    func createAnnotation(
+        selection: ReaderTextSelection,
+        style: ReaderAnnotationStyle,
+        note: String?
+    ) -> ReaderAnnotation? {
+        guard let chapter = currentChapter, let content = content?.content,
+              let store = annotationStore else { return nil }
+        let contentNSString = content as NSString
+        let range = selection.utf16Range
+        guard range.location >= 0, range.length > 0,
+              range.location <= contentNSString.length,
+              range.length <= contentNSString.length - range.location,
+              Range(range, in: content) != nil else { return nil }
+        let selectedText = contentNSString.substring(with: range)
+        guard !selectedText.isEmpty else { return nil }
+        let now = Date()
+        let annotation = ReaderAnnotation(
+            id: UUID(),
+            bookID: libraryBookID,
+            sourceIdentity: self.source.bookSourceUrl,
+            bookIdentity: book.bookURL,
+            chapterIndex: currentChapterIndex,
+            chapterURL: chapter.url,
+            chapterName: chapter.name,
+            utf16Location: range.location,
+            utf16Length: range.length,
+            chapterUTF16Length: contentNSString.length,
+            selectedText: selectedText,
+            style: style,
+            note: Self.normalizedNote(note),
+            createdAt: now,
+            updatedAt: now
+        )
+        store.save(annotation)
+        refreshAnnotations()
+        return annotation
+    }
+
+    func updateAnnotation(id: UUID, style: ReaderAnnotationStyle, note: String?) {
+        guard let store = annotationStore,
+              var annotation = annotations.first(where: { $0.id == id }) else { return }
+        annotation.style = style
+        annotation.note = Self.normalizedNote(note)
+        annotation.updatedAt = Date()
+        store.save(annotation)
+        refreshAnnotations()
+    }
+
+    func removeAnnotation(id: UUID) {
+        annotationStore?.remove(id: id)
+        refreshAnnotations()
+    }
+
+    func goToAnnotation(_ annotation: ReaderAnnotation) {
+        guard annotation.bookID == libraryBookID,
+              annotation.sourceIdentity == source.bookSourceUrl,
+              annotation.bookIdentity == book.bookURL,
+              let targetIndex = annotationChapterIndex(annotation) else { return }
+        if targetIndex == currentChapterIndex, content != nil {
+            applyAnnotationJump(annotation, notifySpeech: true)
+        } else {
+            pendingAnnotationJump = annotation
+            speechController?.readerWillNavigate(self)
+            switchChapter(
+                to: targetIndex,
+                entryPosition: .restore,
+                targetProgress: annotation.normalizedProgress
+            )
+        }
+    }
+
     func attachSpeechController(_ controller: ReaderSpeechController) {
         speechController = controller
     }
@@ -327,6 +412,7 @@ final class ReaderViewModel: ObservableObject {
                 guard let self, self.requestID == id,
                       self.currentChapter?.url == chapter.url else { return }
                 self.content = result
+                self.applyPendingAnnotationJumpIfNeeded()
                 self.isLoading = false
                 self.persistProgress()
                 self.preloadAdjacentChapters(around: self.currentChapterIndex)
@@ -385,6 +471,7 @@ final class ReaderViewModel: ObservableObject {
             self.chapterEntryPosition = .restore
             self.isPaginating = false
             self.updateProgressFromCurrentPage()
+            self.applyPendingAnnotationJumpIfNeeded()
         }
     }
 
@@ -457,6 +544,63 @@ final class ReaderViewModel: ObservableObject {
 
     private func refreshBookmarks() {
         bookmarks = bookmarkStore?.bookmarks(for: libraryBookID) ?? []
+    }
+
+    private func refreshAnnotations() {
+        annotations = annotationStore?.annotations(for: libraryBookID) ?? []
+    }
+
+    private func applyPendingAnnotationJumpIfNeeded() {
+        guard let annotation = pendingAnnotationJump,
+              annotationChapterIndex(annotation) == currentChapterIndex else { return }
+        guard layoutMode != .paged || !pages.isEmpty else { return }
+        pendingAnnotationJump = nil
+        applyAnnotationJump(annotation, notifySpeech: false)
+    }
+
+    private func applyAnnotationJump(_ annotation: ReaderAnnotation, notifySpeech: Bool) {
+        guard let content = content?.content else { return }
+        let total = max(content.utf16.count, 1)
+        let resolved = annotation.resolvedRange(in: content)
+        chapterProgress = resolved.map {
+            min(max(Double($0.location) / Double(total), 0), 1)
+        } ?? annotation.normalizedProgress
+        if layoutMode == .paged {
+            if !pages.isEmpty {
+                if let location = resolved?.location,
+                   let page = pages.firstIndex(where: {
+                       $0.utf16Range.contains(location)
+                           || (location == total && $0.utf16Range.upperBound == total)
+                   }) {
+                    currentPageIndex = page
+                } else {
+                    let lastIndex = max(pages.count - 1, 0)
+                    currentPageIndex = min(
+                        max(Int((chapterProgress * Double(lastIndex)).rounded()), 0),
+                        lastIndex
+                    )
+                }
+                updateProgressFromCurrentPage()
+            } else {
+                saveProgressNow()
+            }
+        } else {
+            restorationProgress = chapterProgress
+            scrollRestorationID += 1
+            saveProgressNow()
+        }
+        if notifySpeech { speechController?.readerDidSeek(self) }
+    }
+
+    private static func normalizedNote(_ note: String?) -> String? {
+        guard let note else { return nil }
+        let normalized = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : normalized
+    }
+
+    private func annotationChapterIndex(_ annotation: ReaderAnnotation) -> Int? {
+        chapters.firstIndex(where: { $0.url == annotation.chapterURL })
+            ?? (chapters.indices.contains(annotation.chapterIndex) ? annotation.chapterIndex : nil)
     }
 
     private static func matches(_ progress: ReadingProgress, chapter: BookChapterResult?) -> Bool {

@@ -3,6 +3,8 @@ import SwiftUI
 struct ReaderPagedContentView: View {
     let pages: [ReaderPage]
     let currentPageIndex: Int
+    let fullText: String
+    let annotations: [ReaderAnnotation]
     let settings: ReaderSettings
     let viewportWidth: CGFloat
     let canTurnPrevious: Bool
@@ -10,6 +12,8 @@ struct ReaderPagedContentView: View {
     let turnPrevious: () -> Void
     let turnNext: () -> Void
     let toggleControls: () -> Void
+    let onSelectionChanged: (ReaderTextSelection?) -> Void
+    let selectionActive: Bool
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var turnState = ReaderPageTurnState()
@@ -19,7 +23,13 @@ struct ReaderPagedContentView: View {
         ZStack {
             settings.theme.backgroundColor
             if let currentPage {
-                ReaderPageView(page: currentPage, settings: settings)
+                ReaderPageView(
+                    page: currentPage,
+                    fullText: fullText,
+                    annotations: annotations,
+                    settings: settings,
+                    onSelectionChanged: onSelectionChanged
+                )
             }
             movingPage
         }
@@ -46,8 +56,15 @@ struct ReaderPagedContentView: View {
         if settings.pageTurnStyle == .cover,
            let direction = turnState.direction,
            let page = adjacentPage(for: direction) {
-            ReaderPageView(page: page, settings: settings)
+            ReaderPageView(
+                page: page,
+                fullText: fullText,
+                annotations: annotations,
+                settings: settings,
+                onSelectionChanged: { _ in }
+            )
                 .offset(x: movingPageOffset(direction: direction))
+                .allowsHitTesting(false)
                 .shadow(
                     color: .black.opacity(turnState.translation == 0 ? 0 : 0.18),
                     radius: 6,
@@ -61,6 +78,7 @@ struct ReaderPagedContentView: View {
         DragGesture(minimumDistance: 10)
             .onChanged { value in
                 guard !turnState.isAnimating else { return }
+                guard !selectionActive else { return }
                 let detected = ReaderPageTurnDecision.direction(for: value.translation)
                 guard let detected, turnState.begin(direction: detected) else { return }
                 turnState.translation = directionalTranslation(
@@ -69,7 +87,8 @@ struct ReaderPagedContentView: View {
                 )
             }
             .onEnded { value in
-                guard !turnState.isAnimating, let direction = turnState.direction else {
+                guard !selectionActive, !turnState.isAnimating,
+                      let direction = turnState.direction else {
                     return
                 }
                 let decision = ReaderPageTurnDecision.evaluate(
@@ -87,7 +106,7 @@ struct ReaderPagedContentView: View {
     }
 
     private func handleTap(_ value: SpatialTapGesture.Value) {
-        guard turnState.isIdle else { return }
+        guard turnState.isIdle, !selectionActive else { return }
         let ratio = min(max(value.location.x / max(viewportWidth, 1), 0), 1)
         if ratio < 0.25 {
             requestTurn(.previous)
@@ -207,13 +226,20 @@ struct ReaderPagedContentView: View {
 
 private struct ReaderPageView: View {
     let page: ReaderPage
+    let fullText: String
+    let annotations: [ReaderAnnotation]
     let settings: ReaderSettings
+    let onSelectionChanged: (ReaderTextSelection?) -> Void
 
     var body: some View {
-        Text(page.text)
-            .font(.system(size: CGFloat(settings.fontSize)))
-            .lineSpacing(CGFloat(settings.lineSpacing))
-            .foregroundStyle(settings.theme.foregroundColor)
+        ReaderSelectableTextView(
+            fullText: fullText,
+            displayedText: page.text,
+            displayedUTF16Range: page.utf16Range,
+            annotations: annotations,
+            settings: settings,
+            onSelectionChanged: onSelectionChanged
+        )
             .padding(.horizontal, CGFloat(settings.horizontalPadding))
             .padding(.vertical, 20)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)

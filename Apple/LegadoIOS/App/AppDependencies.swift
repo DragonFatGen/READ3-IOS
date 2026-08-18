@@ -8,6 +8,7 @@ struct AppDependencies {
     let readerSpeechSettingsStore: ReaderSpeechSettingsStore
     let readerSpeechController: ReaderSpeechController
     let bookmarkRepository: BookmarkRepository
+    let annotationRepository: ReaderAnnotationRepository
     let readerPaginator: any ReaderPaginating
     let cookieStore: any HTTPCookieStore
     let searchService: any BookSearching
@@ -80,6 +81,7 @@ struct AppDependencies {
             readerSpeechSettingsStore: speechSettingsStore,
             readerSpeechController: speechController,
             bookmarkRepository: BookmarkRepository(),
+            annotationRepository: ReaderAnnotationRepository(),
             readerPaginator: TextKitReaderPaginator(),
             cookieStore: cookieStore,
             searchService: LegadoSearchService(
@@ -119,6 +121,7 @@ struct AppDependencies {
     func removeFromLibrary(_ book: LibraryBook) {
         libraryRepository.remove(bookID: book.id)
         bookmarkRepository.removeAll(for: book.id)
+        annotationRepository.removeAll(for: book.id)
         let cache = chapterContentCache
         Task {
             await cache.removeAll(for: ChapterCacheBookKey(
