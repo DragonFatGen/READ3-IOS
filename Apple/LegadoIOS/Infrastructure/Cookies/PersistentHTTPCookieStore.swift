@@ -10,7 +10,7 @@ actor PersistentHTTPCookieStore: HTTPCookieStore {
         self.persistence = persistence
     }
 
-    func cookies(for url: URL, sourceIdentifier: String?) async throws -> [HTTPCookie] {
+    func cookies(for url: URL, sourceIdentifier: String?) async throws -> [LegadoCore.HTTPCookie] {
         try await ensureLoaded()
         let previousCount = collection.records.count
         let values = collection.cookies(for: url)
@@ -21,7 +21,7 @@ actor PersistentHTTPCookieStore: HTTPCookieStore {
     }
 
     func store(
-        _ cookies: [HTTPCookie],
+        _ cookies: [LegadoCore.HTTPCookie],
         for url: URL,
         sourceIdentifier: String?
     ) async throws {

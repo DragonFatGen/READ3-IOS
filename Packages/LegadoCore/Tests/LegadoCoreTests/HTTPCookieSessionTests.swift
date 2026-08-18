@@ -5,7 +5,7 @@ import XCTest
 final class HTTPCookieSessionTests: XCTestCase {
     func testLegacyCodableCookieDefaultsToDomainCookie() throws {
         let data = Data(#"{"name":"id","value":"1","domain":"example.invalid","path":"/","isSecure":false,"isHTTPOnly":false}"#.utf8)
-        let cookie = try JSONDecoder().decode(HTTPCookie.self, from: data)
+        let cookie = try JSONDecoder().decode(LegadoCore.HTTPCookie.self, from: data)
         XCTAssertFalse(cookie.isHostOnly)
         XCTAssertTrue(cookie.matches(try url("https://sub.example.invalid/")))
     }
@@ -148,10 +148,10 @@ final class HTTPCookieSessionTests: XCTestCase {
 private actor RedirectCookieTransport: HTTPClient {
     let start: URL
     let next: URL
-    let cookie: HTTPCookie
+    let cookie: LegadoCore.HTTPCookie
     private(set) var nextRequestCookie: String?
 
-    init(start: URL, next: URL, cookie: HTTPCookie) {
+    init(start: URL, next: URL, cookie: LegadoCore.HTTPCookie) {
         self.start = start
         self.next = next
         self.cookie = cookie
