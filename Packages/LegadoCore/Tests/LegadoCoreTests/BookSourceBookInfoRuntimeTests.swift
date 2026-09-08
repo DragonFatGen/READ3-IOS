@@ -209,10 +209,11 @@ final class BookSourceBookInfoRuntimeTests: XCTestCase {
         XCTAssertEqual(result.name, "Book A")
     }
 
-    func testUnsupportedCharsetIsTypedDecodeError() async throws {
-        let (runtime, _) = runtime(
-            fixture: "html-basic.html",
-            contentType: "text/html; charset=x-unsupported-test"
+    func testDecoderFailureIsTypedDecodeError() async throws {
+        let response = try response(fixture: "html-basic.html")
+        let runtime = BookSourceBookInfoRuntime(
+            httpClient: MockHTTPClient(response: response),
+            textDecoder: AlwaysFailingRuntimeTextDecoder()
         )
         await XCTAssertThrowsErrorAsync(try await runtime.fetchBookInfo(source: htmlSource(), book: book())) {
             guard let error = $0 as? BookInfoError,

@@ -212,10 +212,20 @@ final class BookSourceSearchRuntimeTests: XCTestCase {
         XCTAssertEqual(result.first?.name, "Book A")
     }
 
-    func testUnsupportedResponseCharsetIsTypedSearchError() async throws {
+    func testUnknownResponseCharsetFallsBackToUTF8() async throws {
         let (runtime, _) = runtime(
             fixture: "html-basic.html",
             contentType: "text/html; charset=x-unsupported-test"
+        )
+        let result = try await runtime.search(source: basicHTMLSource(), keyword: "x")
+        XCTAssertEqual(result.first?.name, "Book A")
+    }
+
+    func testDecoderFailureIsTypedSearchError() async throws {
+        let response = try response(fixture: "html-basic.html")
+        let runtime = BookSourceSearchRuntime(
+            httpClient: MockHTTPClient(response: response),
+            textDecoder: AlwaysFailingRuntimeTextDecoder()
         )
         do {
             _ = try await runtime.search(source: basicHTMLSource(), keyword: "x")

@@ -42,10 +42,20 @@ enum PlatformTextCodec {
         }
         return data
         #else
+        #if canImport(Darwin)
+        let encoding = darwinFoundationEncoding(for: chinese)
+        #else
         let encoding = foundationEncoding(for: chinese)
+        #endif
         guard let data = value.data(using: encoding, allowLossyConversion: false) else {
             throw HTTPError.encodingFailed(charset)
         }
+        #if canImport(Darwin)
+        if (chinese.kind == .gb2312 || chinese.kind == .gbk),
+           !isValidEncodedData(data, kind: chinese.kind) {
+            throw HTTPError.encodingFailed(charset)
+        }
+        #endif
         return data
         #endif
     }
@@ -166,7 +176,7 @@ enum PlatformTextCodec {
         #if canImport(Darwin)
         return String(
             data: data,
-            encoding: darwinFoundationDecodingEncoding(for: encoding)
+            encoding: darwinFoundationEncoding(for: encoding)
         )
         #else
         return String(data: data, encoding: foundationEncoding(for: encoding))
@@ -202,7 +212,7 @@ enum PlatformTextCodec {
 
     #if !os(Windows)
     #if canImport(Darwin)
-    private static func darwinFoundationDecodingEncoding(
+    private static func darwinFoundationEncoding(
         for encoding: ChineseEncoding
     ) -> String.Encoding {
         switch encoding.kind {

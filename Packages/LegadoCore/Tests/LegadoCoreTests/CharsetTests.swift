@@ -30,6 +30,10 @@ final class CharsetTests: XCTestCase {
 
     func testEncodesChineseCharsetsToExpectedBytes() throws {
         XCTAssertEqual(
+            try encoder.encode("中文阅读", charset: "GB2312"),
+            try hexFixture("gb2312.hex")
+        )
+        XCTAssertEqual(
             try encoder.encode("中文阅读", charset: "GBK"),
             try hexFixture("gbk.hex")
         )

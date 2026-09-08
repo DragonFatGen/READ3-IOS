@@ -73,6 +73,12 @@ data is decoded in contiguous valid runs so stateful platform codecs receive
 the complete byte stream. No UI or other Apple-only framework is imported into
 LegadoCore.
 
+On Darwin, GB2312 and GBK encoding uses the system-supported GB18030 codec and
+then validates every emitted unit against the narrower requested byte range.
+This avoids unsupported legacy Foundation encoding identifiers while still
+rejecting GBK-only characters for GB2312 and four-byte GB18030 output for GBK.
+The Windows code-page path is unchanged.
+
 Malformed GBK-family or Big5 units produce U+FFFD while valid following bytes
 continue decoding, matching Android's replacement behavior. Unknown names
 produce `HTTPError.unsupportedCharset`. A supported encoding that cannot

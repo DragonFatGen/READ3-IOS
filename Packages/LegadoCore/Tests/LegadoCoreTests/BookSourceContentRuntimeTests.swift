@@ -517,13 +517,14 @@ final class BookSourceContentRuntimeTests: XCTestCase {
         }
     }
 
-    func testUnsupportedCharsetIsTypedDecodeError() async throws {
-        let client = MockHTTPClient(response: try response(
-            "<div id='content'>Value</div>",
-            contentType: "text/html; charset=unsupported-content-charset"
-        ))
+    func testDecoderFailureIsTypedDecodeError() async throws {
+        let client = MockHTTPClient(response: try response("<div id='content'>Value</div>"))
+        let runtime = BookSourceContentRuntime(
+            httpClient: client,
+            textDecoder: AlwaysFailingRuntimeTextDecoder()
+        )
         await XCTAssertThrowsContentError(
-            try await runtime(client).fetchContent(
+            try await runtime.fetchContent(
                 source: htmlSource(),
                 book: book(),
                 chapter: chapter()

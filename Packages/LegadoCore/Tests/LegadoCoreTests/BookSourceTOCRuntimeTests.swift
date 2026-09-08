@@ -390,12 +390,12 @@ final class BookSourceTOCRuntimeTests: XCTestCase {
         XCTAssertEqual(chapters.count, 3)
     }
 
-    func testUnsupportedCharsetIsTypedDecodeFailure() async throws {
-        let response = try fixtureResponse(
-            "html-basic.html",
-            contentType: "text/html; charset=x-unsupported-test"
+    func testDecoderFailureIsTypedDecodeFailure() async throws {
+        let response = try fixtureResponse("html-basic.html")
+        let runtime = BookSourceTOCRuntime(
+            httpClient: MockHTTPClient(response: response),
+            textDecoder: AlwaysFailingRuntimeTextDecoder()
         )
-        let runtime = BookSourceTOCRuntime(httpClient: MockHTTPClient(response: response))
         await XCTAssertThrowsErrorAsync(try await runtime.fetchTOC(source: htmlSource(), book: book())) {
             guard let error = $0 as? TOCError,
                   case .responseDecodeFailed = error else { return XCTFail("Unexpected \($0)") }
