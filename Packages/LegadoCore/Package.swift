@@ -12,6 +12,10 @@ let package = Package(
         .library(
             name: "LegadoCore",
             targets: ["LegadoCore"]
+        ),
+        .executable(
+            name: "legado-compatibility",
+            targets: ["LegadoCompatibilityCLI"]
         )
     ],
     dependencies: [
@@ -22,9 +26,17 @@ let package = Package(
             name: "LegadoCore",
             dependencies: ["SwiftSoup"]
         ),
+        .executableTarget(
+            name: "LegadoCompatibilityCLI",
+            dependencies: ["LegadoCore"]
+        ),
         .testTarget(
             name: "LegadoCoreTests",
             dependencies: ["LegadoCore"]
+        ),
+        .testTarget(
+            name: "LegadoCompatibilityCLITests",
+            dependencies: ["LegadoCompatibilityCLI", "LegadoCore"]
         )
     ]
 )
