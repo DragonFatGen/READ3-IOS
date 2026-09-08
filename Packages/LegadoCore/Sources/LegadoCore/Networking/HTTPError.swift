@@ -10,6 +10,7 @@ public enum HTTPError: Error, Equatable, Sendable {
     case unsupportedCharset(String)
     case encodingFailed(String)
     case decodingFailed(String)
+    case responseDecodingFailed(String)
     case httpStatus(Int)
 }
 
@@ -25,6 +26,7 @@ extension HTTPError: LocalizedError {
         case let .unsupportedCharset(charset): "Unsupported charset: \(charset)"
         case let .encodingFailed(charset): "Text encoding failed for charset: \(charset)"
         case let .decodingFailed(charset): "Text decoding failed for charset: \(charset)"
+        case let .responseDecodingFailed(message): "HTTP response text decoding failed: \(message)"
         case let .httpStatus(status): "HTTP request failed with status \(status)."
         }
     }

@@ -81,8 +81,17 @@ final class CharsetTests: XCTestCase {
         }
     }
 
-    func testResponseCharsetPriorityIsExplicitThenHeaderThenHTMLMetaThenUTF8() throws {
+    func testResponseCharsetPriorityIsBOMThenExplicitHeaderHTMLMetaAndFallback() throws {
         let url = try XCTUnwrap(URL(string: "https://fixture.invalid"))
+        let bom = HTTPResponse(
+            statusCode: 200,
+            headers: HTTPHeaders(["Content-Type": "text/html; charset=GBK"]),
+            data: Data([0xEF, 0xBB, 0xBF]) + Data("BOM 中文".utf8),
+            finalURL: url
+        )
+        XCTAssertEqual(bom.byteOrderMarkCharset, "utf-8")
+        XCTAssertEqual(try bom.text(), "BOM 中文")
+
         let gbk = try encoder.encode("中文阅读", charset: "GBK")
         let header = HTTPResponse(
             statusCode: 200,
@@ -121,6 +130,69 @@ final class CharsetTests: XCTestCase {
 
         let utf8 = HTTPResponse(statusCode: 200, data: Data("默认 UTF-8".utf8), finalURL: url)
         XCTAssertEqual(try utf8.text(), "默认 UTF-8")
+    }
+
+    func testUnknownOrIncorrectDeclarationFallsThroughWithoutCrashing() throws {
+        let url = try XCTUnwrap(URL(string: "https://fixture.invalid"))
+        let html = "<meta charset=GBK><p>错误声明仍可阅读</p>"
+        let response = HTTPResponse(
+            statusCode: 200,
+            headers: HTTPHeaders(["Content-Type": "text/html; charset=x-unknown"]),
+            data: try encoder.encode(html, charset: "GBK"),
+            finalURL: url
+        )
+        XCTAssertEqual(try response.text(), html)
+
+        let incorrect = HTTPResponse(
+            statusCode: 200,
+            headers: HTTPHeaders(["Content-Type": "text/html; charset=UTF-8"]),
+            data: try encoder.encode(html, charset: "GBK"),
+            finalURL: url
+        )
+        XCTAssertEqual(try incorrect.text(), html)
+    }
+
+    func testMissingDeclarationFallsBackToGB18030Family() throws {
+        let url = try XCTUnwrap(URL(string: "https://fixture.invalid"))
+        let response = HTTPResponse(
+            statusCode: 200,
+            data: try encoder.encode("无声明中文正文😀", charset: "GB18030"),
+            finalURL: url
+        )
+        XCTAssertEqual(try response.text(), "无声明中文正文😀")
+    }
+
+    func testUTF16BOMOverridesConflictingHeader() throws {
+        let url = try XCTUnwrap(URL(string: "https://fixture.invalid"))
+        var data = Data([0xFF, 0xFE])
+        data.append(try XCTUnwrap("中文".data(using: .utf16LittleEndian)))
+        let response = HTTPResponse(
+            statusCode: 200,
+            headers: HTTPHeaders(["Content-Type": "text/plain; charset=Big5"]),
+            data: data,
+            finalURL: url
+        )
+        XCTAssertEqual(response.byteOrderMarkCharset, "utf-16le")
+        XCTAssertEqual(try response.text(), "中文")
+    }
+
+    func testAllDecoderFailuresIncludeAttemptedCharsets() throws {
+        let url = try XCTUnwrap(URL(string: "https://fixture.invalid"))
+        let response = HTTPResponse(
+            statusCode: 200,
+            headers: HTTPHeaders(["Content-Type": "text/html; charset=x-private"]),
+            data: Data([0xFF]),
+            finalURL: url
+        )
+        XCTAssertThrowsError(try response.text(decoder: AlwaysFailingTextDecoder())) { error in
+            guard case let HTTPError.responseDecodingFailed(message) = error else {
+                return XCTFail("Unexpected error: \(error)")
+            }
+            XCTAssertTrue(message.contains("x-private"))
+            XCTAssertTrue(message.contains("utf-8"))
+            XCTAssertTrue(message.contains("gb18030"))
+            XCTAssertTrue(message.contains("big5"))
+        }
     }
 
     func testContentTypeCharsetIsCaseInsensitiveQuotedAndAllowsExtraParameters() throws {
@@ -163,3 +235,9 @@ final class CharsetTests: XCTestCase {
 }
 
 private enum HexFixtureError: Error { case invalidByte(String) }
+
+private struct AlwaysFailingTextDecoder: TextDecoder {
+    func decode(_ data: Data, charset: String) throws -> String {
+        throw HTTPError.decodingFailed(charset)
+    }
+}

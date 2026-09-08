@@ -3,7 +3,7 @@ import XCTest
 @testable import LegadoCore
 
 final class BookSourceCompatibilityRunnerTests: XCTestCase {
-    func testImportedChineseFixtureRunsCompleteProductionChain() async throws {
+    func testImportedChineseFixtureRunsMixedEncodingProductionChain() async throws {
         let client = MockHTTPClient(results: try successfulResponses())
         let report = await BookSourceCompatibilityRunner(httpClient: client).run(
             sourceJSON: try sourceJSON(),
@@ -56,14 +56,27 @@ final class BookSourceCompatibilityRunnerTests: XCTestCase {
         XCTAssertTrue(report.failure?.message.contains("<redacted>") == true)
     }
 
-    func testCharsetFailureCategoryRetainsSearchOperation() async throws {
+    func testUnknownCharsetDeclarationRecoversWithResponseFallback() async throws {
         let response = try fixtureResponse(
             "search.html",
             url: "https://fixture.invalid/search",
-            charset: "x-private"
+            charset: "UTF-8",
+            declaredCharset: "x-private"
         )
+        var responses = try successfulResponses()
+        responses[0] = .success(response)
         let report = await BookSourceCompatibilityRunner(
-            httpClient: MockHTTPClient(response: response)
+            httpClient: MockHTTPClient(results: responses)
+        ).run(sourceJSON: try sourceJSON(), keyword: "科幻")
+        XCTAssertTrue(report.isSuccessful)
+        XCTAssertEqual(report.searchResults.map(\.name), ["三体"])
+    }
+
+    func testCharsetFailureCategoryRetainsSearchOperation() async throws {
+        let response = try fixtureResponse("search.html", url: "https://fixture.invalid/search")
+        let report = await BookSourceCompatibilityRunner(
+            httpClient: MockHTTPClient(response: response),
+            textDecoder: AlwaysFailingCompatibilityTextDecoder()
         ).run(sourceJSON: try sourceJSON(), keyword: "科幻")
         XCTAssertEqual(report.failure?.stage, .charset)
         XCTAssertEqual(report.failure?.operation, .search)
@@ -139,9 +152,18 @@ final class BookSourceCompatibilityRunnerTests: XCTestCase {
     private func successfulResponses() throws -> [Result<HTTPResponse, HTTPError>] {
         [
             .success(try fixtureResponse("search.html", url: "https://fixture.invalid/search")),
-            .success(try fixtureResponse("book-info.html", url: "https://fixture.invalid/book/three")),
-            .success(try fixtureResponse("toc.html", url: "https://fixture.invalid/book/three/chapters")),
-            .success(try fixtureResponse("content.html", url: "https://fixture.invalid/book/three/chapter/1"))
+            .success(try fixtureResponse(
+                "book-info.html", url: "https://fixture.invalid/book/three",
+                charset: "GB2312", includesContentType: false
+            )),
+            .success(try fixtureResponse(
+                "toc.html", url: "https://fixture.invalid/book/three/chapters",
+                charset: "GB18030", includesContentType: false
+            )),
+            .success(try fixtureResponse(
+                "content.html", url: "https://fixture.invalid/book/three/chapter/1",
+                charset: "Big5", declaredCharset: "x-invalid"
+            ))
         ]
     }
 
@@ -149,18 +171,21 @@ final class BookSourceCompatibilityRunnerTests: XCTestCase {
         _ fixture: String,
         directory: String = "compatibility",
         url: String,
-        charset: String = "GBK"
+        charset: String = "GBK",
+        declaredCharset: String? = nil,
+        includesContentType: Bool = true
     ) throws -> HTTPResponse {
         let text = String(
             decoding: try FixtureLoader.data(named: fixture, directory: directory),
             as: UTF8.self
         )
-        let data = charset == "x-private"
-            ? Data(text.utf8)
-            : try FoundationTextEncoder().encode(text, charset: charset)
+        let data = try FoundationTextEncoder().encode(text, charset: charset)
+        let headers = includesContentType
+            ? HTTPHeaders(["Content-Type": "text/html; charset=\(declaredCharset ?? charset)"])
+            : HTTPHeaders()
         return HTTPResponse(
             statusCode: 200,
-            headers: HTTPHeaders(["Content-Type": "text/html; charset=\(charset)"]),
+            headers: headers,
             data: data,
             finalURL: try XCTUnwrap(URL(string: url))
         )
@@ -173,5 +198,11 @@ final class BookSourceCompatibilityRunnerTests: XCTestCase {
     private func replacing(_ target: String, with replacement: String) throws -> Data {
         let original = String(decoding: try sourceJSON(), as: UTF8.self)
         return Data(original.replacingOccurrences(of: target, with: replacement).utf8)
+    }
+}
+
+private struct AlwaysFailingCompatibilityTextDecoder: TextDecoder {
+    func decode(_ data: Data, charset: String) throws -> String {
+        throw HTTPError.decodingFailed(charset)
     }
 }

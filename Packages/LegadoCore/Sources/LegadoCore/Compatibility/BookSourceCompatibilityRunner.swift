@@ -300,7 +300,7 @@ public struct BookSourceCompatibilityRunner: Sendable {
 
     private func classify(_ error: HTTPError) -> CompatibilityStage {
         switch error {
-        case .unsupportedCharset, .encodingFailed, .decodingFailed:
+        case .unsupportedCharset, .encodingFailed, .decodingFailed, .responseDecodingFailed:
             return .charset
         case .invalidURL, .invalidRequestOptions, .invalidHeaders, .unsupportedMethod,
              .transportError, .invalidResponse, .httpStatus:

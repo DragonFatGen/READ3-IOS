@@ -79,12 +79,21 @@ produce `HTTPError.unsupportedCharset`. A supported encoding that cannot
 represent a string produces `HTTPError.encodingFailed`; invalid bytes for the
 existing strict Foundation codecs may produce `HTTPError.decodingFailed`.
 
-`HTTPResponse.text` removes a UTF-8 BOM in the decoder and uses:
+`HTTPResponse.text` converts response bytes to a Swift Unicode string before a
+search, explore, book-info, TOC, or content parser sees the body. It uses:
 
-1. explicit charset;
-2. Content-Type charset;
-3. HTML meta charset found in the first 16 KiB;
-4. UTF-8.
+1. UTF-8, UTF-16LE, or UTF-16BE BOM;
+2. an explicit caller charset, when supplied;
+3. HTTP Content-Type charset;
+4. HTML meta charset found in the first 16 KiB, including legacy http-equiv;
+5. strict UTF-8, then GB18030 (which includes GBK/GB2312), then Big5.
+
+Unknown declarations and decoders that reject malformed bytes do not stop the
+candidate sequence. A candidate containing replacement characters is retained
+only as a final lossy result while cleaner declarations and fallbacks are tried.
+If every candidate fails, `HTTPError.responseDecodingFailed` lists the attempted
+charsets without response data or credentials, making the affected runtime's
+existing `responseDecodeFailed` diagnostic actionable.
 
 `RequestBuilder` uses URL option charset for GET and form values. It preserves
 existing percent escapes only in the no-explicit-charset GET path. Raw POST uses
@@ -101,7 +110,9 @@ GB2312, GB18030, Big5, and malformed GBK input. Tests cover:
 - UTF-8 BOM removal;
 - malformed-byte replacement;
 - typed unsupported and encoding errors;
-- explicit/Header/meta/default response priority;
+- BOM/explicit/Header/meta/fallback response priority;
+- missing, unknown, and incorrect declaration recovery;
+- UTF-16 BOM recognition and diagnostic aggregation when all decoders fail;
 - GBK GET values;
 - GB18030 form POST values;
 - raw POST Content-Type charset;
@@ -112,9 +123,10 @@ All formal tests are fixture-based and perform no live network access.
 
 ## Compatibility differences and unsupported behavior
 
-- Android falls back to bundled ICU statistical detection when neither HTTP nor
-  HTML declares a charset. Swift currently falls back to UTF-8 after HTML meta
-  detection; statistical detection is not implemented.
+- Android can use bundled ICU statistical detection when neither HTTP nor HTML
+  declares a charset. Swift uses the deterministic UTF-8/GB18030/Big5 sequence;
+  it does not attempt statistical language detection, so byte streams valid as
+  both GB18030 and Big5 require a correct declaration for reliable distinction.
 - URL option `charset: "escape"` remains unsupported.
 - Arbitrary JVM charset names outside the documented set remain unsupported.
 - Darwin compilation and behavior require macOS/iOS CI verification; Windows

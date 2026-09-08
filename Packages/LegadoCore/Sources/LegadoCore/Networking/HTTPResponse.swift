@@ -39,9 +39,35 @@ public struct HTTPResponse: Equatable, Sendable {
         explicitCharset: String? = nil,
         decoder: any TextDecoder = FoundationTextDecoder()
     ) throws -> String {
-        let charset = explicitCharset ?? contentTypeCharset ?? htmlMetaCharset ?? "utf-8"
-        return try decoder.decode(data, charset: charset)
+        var candidates: [(charset: String, data: Data)] = []
+        if let bom = byteOrderMark {
+            candidates.append((bom.charset, data.dropFirst(bom.length)))
+        }
+        if let explicitCharset { candidates.append((explicitCharset, data)) }
+        if let contentTypeCharset { candidates.append((contentTypeCharset, data)) }
+        if let htmlMetaCharset { candidates.append((htmlMetaCharset, data)) }
+        candidates.append(contentsOf: ["utf-8", "gb18030", "big5"].map { ($0, data) })
+
+        var attempted: [String] = []
+        var lossyFallback: String?
+        var seen: Set<String> = []
+        for candidate in candidates {
+            let key = Self.normalizedCharset(candidate.charset)
+            guard seen.insert(key).inserted else { continue }
+            do {
+                let value = try decoder.decode(candidate.data, charset: candidate.charset)
+                if !value.contains("\u{FFFD}") { return value }
+                if lossyFallback == nil { lossyFallback = value }
+                attempted.append("\(candidate.charset) produced replacement characters")
+            } catch {
+                attempted.append("\(candidate.charset): \(error.localizedDescription)")
+            }
+        }
+        if let lossyFallback { return lossyFallback }
+        throw HTTPError.responseDecodingFailed(attempted.joined(separator: "; "))
     }
+
+    var byteOrderMarkCharset: String? { byteOrderMark?.charset }
 
     public var contentTypeCharset: String? {
         guard let contentType = headers["Content-Type"] else { return nil }
@@ -74,5 +100,19 @@ public struct HTTPResponse: Equatable, Sendable {
             return String(probe[range])
         }
         return nil
+    }
+
+    private var byteOrderMark: (charset: String, length: Int)? {
+        if data.starts(with: [0xEF, 0xBB, 0xBF]) { return ("utf-8", 3) }
+        if data.starts(with: [0xFF, 0xFE]) { return ("utf-16le", 2) }
+        if data.starts(with: [0xFE, 0xFF]) { return ("utf-16be", 2) }
+        return nil
+    }
+
+    private static func normalizedCharset(_ charset: String) -> String {
+        charset
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: "_", with: "-")
     }
 }

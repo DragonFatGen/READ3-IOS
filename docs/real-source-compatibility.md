@@ -79,8 +79,11 @@ responses. It covers:
 - real JSON import rather than a test-constructed `BookSource`;
 - preservation of an unknown source field;
 - a Chinese keyword encoded as a GBK GET parameter;
-- GBK response bodies at all four network stages;
+- mixed response bodies across the four network stages: GBK from HTTP charset,
+  GB2312 from legacy HTML meta, undeclared GB18030 fallback, and Big5 recovered
+  from HTML meta after an unknown HTTP declaration;
 - relative book, TOC, and chapter URLs;
+- malformed, unclosed content HTML recovered by the production selector;
 - production Search -> BookInfo -> TOC -> Content hand-off;
 - import, request, charset, rule-parser, selector, JavaScript, unsupported
   capability, TOC, and content failure reporting;
