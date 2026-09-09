@@ -21,6 +21,10 @@ jobs:
         with:
           submodules: false
 
+      - name: Test diagnostic workflow helpers (offline)
+        shell: pwsh
+        run: ./Scripts/Tests/SourceDiagnostic.Tests.ps1
+
       # swift-actions/setup-swift v3 does not support Windows.
       # Use the Windows-specific Swift setup action instead.
       - name: Install Swift 6.3.3
@@ -43,10 +47,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) {
             throw "LegadoCore tests failed with exit code $LASTEXITCODE"
           }
-
-      - name: Test diagnostic workflow helpers (offline)
-        shell: pwsh
-        run: ./Scripts/Tests/SourceDiagnostic.Tests.ps1
 
   macos-core-tests:
     name: macOS / Xcode Swift

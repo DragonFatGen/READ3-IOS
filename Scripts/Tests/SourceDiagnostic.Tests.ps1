@@ -1,6 +1,8 @@
 param([switch]$NativeFixture, [string]$Payload)
 
 if ($NativeFixture) {
+    # Match the CLI's explicit UTF-8 byte output regardless of runner console code page.
+    [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
     [Console]::Out.Write($Payload)
     [Console]::Error.Write('private-stderr')
     if ($env:SOURCE_DIAGNOSTIC_JSON) { exit 9 }
@@ -95,7 +97,9 @@ try {
     ) -Directory $temporary -Prefix 'fixture' -TimeoutSeconds 30
     Assert-True ($code -is [int]) 'Process capture emitted values other than its integer exit code.'
     Assert-True ($code -eq 1) 'Native exit code or secret environment isolation changed.'
-    Assert-True ([System.IO.File]::ReadAllText((Join-Path $temporary 'fixture.stdout')) -ceq $payload) 'Argument or stdout changed.'
+    $actualOutput = [System.IO.File]::ReadAllText((Join-Path $temporary 'fixture.stdout'))
+    $fixtureBytes = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes((Join-Path $temporary 'fixture.stdout')))
+    Assert-True ($actualOutput -ceq $payload) "Argument or stdout changed (synthetic fixture bytes: $fixtureBytes)."
     Assert-True ([System.IO.File]::ReadAllText((Join-Path $temporary 'fixture.stderr')) -ceq 'private-stderr') 'Streams mixed.'
 
     # The actual entry script must stop before Swift when the secret is missing.
