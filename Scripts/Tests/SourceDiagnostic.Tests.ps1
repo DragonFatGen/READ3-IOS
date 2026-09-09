@@ -93,6 +93,7 @@ try {
     $code = Invoke-DiagnosticProcess -Executable (Get-Command pwsh).Source -Arguments @(
         '-NoProfile', '-File', $PSCommandPath, '-NativeFixture', '-Payload', $payload
     ) -Directory $temporary -Prefix 'fixture' -TimeoutSeconds 30
+    Assert-True ($code -is [int]) 'Process capture emitted values other than its integer exit code.'
     Assert-True ($code -eq 1) 'Native exit code or secret environment isolation changed.'
     Assert-True ([System.IO.File]::ReadAllText((Join-Path $temporary 'fixture.stdout')) -ceq $payload) 'Argument or stdout changed.'
     Assert-True ([System.IO.File]::ReadAllText((Join-Path $temporary 'fixture.stderr')) -ceq 'private-stderr') 'Streams mixed.'

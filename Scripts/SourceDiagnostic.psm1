@@ -145,8 +145,10 @@ function Invoke-DiagnosticProcess {
             $process.Kill($true)
             $process.WaitForExit()
         }
-        $outTask.GetAwaiter().GetResult()
-        $errTask.GetAwaiter().GetResult()
+        # PowerShell can expose the task's internal completion value on its
+        # success stream. The function must emit only the native integer exit code.
+        $null = $outTask.GetAwaiter().GetResult()
+        $null = $errTask.GetAwaiter().GetResult()
         if ($timedOut) { return 124 }
         return $process.ExitCode
     } finally {
