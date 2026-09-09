@@ -101,9 +101,11 @@ responses are never fixed XCTest expectations.
 
 ## Optional live-network principle
 
-Any future live-network entry must be a manual script under `Scripts`, be
-explicitly opt-in, remain disabled by default, and stay outside required GitHub
-Actions checks. Its output is diagnostic or a candidate for a reviewed,
+The existing CLI can be run through the opt-in `workflow_dispatch` workflow
+`source-diagnostic.yml` and its helpers under `Scripts`; see
+[the CLI guide](live-source-compatibility-cli.md#manual-github-actions-diagnostic).
+It stays outside required GitHub Actions live-network checks and reads a single
+source from a Repository Secret. Its output is diagnostic or a candidate for a reviewed,
 desensitized fixture. It must not write cookies, authorization headers, tokens,
 accounts, passwords, or private source collections into the repository.
 

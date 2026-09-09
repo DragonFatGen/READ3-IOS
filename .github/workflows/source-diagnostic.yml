@@ -1,0 +1,75 @@
+name: Manual Source Diagnostic
+
+on:
+  workflow_dispatch:
+    inputs:
+      keyword:
+        description: Search keyword (public input; do not enter sensitive data)
+        required: true
+        type: string
+      search_page:
+        description: Search page (minimum 1)
+        default: '1'
+        type: string
+      book_index:
+        description: Zero-based book index
+        default: '0'
+        type: string
+      chapter_index:
+        description: Zero-based chapter index
+        default: '0'
+        type: string
+      maximum_page_count:
+        description: TOC/content pagination limit (1 to 10)
+        default: '3'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostic:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Install Swift 6.3.3
+        uses: compnerd/gha-setup-swift@main
+        with:
+          swift-version: swift-6.3.3-release
+          swift-build: 6.3.3-RELEASE
+
+      - name: Run source diagnostic
+        env:
+          SOURCE_DIAGNOSTIC_JSON: ${{ secrets.SOURCE_DIAGNOSTIC_JSON }}
+          DIAGNOSTIC_KEYWORD: ${{ inputs.keyword }}
+          DIAGNOSTIC_SEARCH_PAGE: ${{ inputs.search_page }}
+          DIAGNOSTIC_BOOK_INDEX: ${{ inputs.book_index }}
+          DIAGNOSTIC_CHAPTER_INDEX: ${{ inputs.chapter_index }}
+          DIAGNOSTIC_MAXIMUM_PAGE_COUNT: ${{ inputs.maximum_page_count }}
+        run: ./Scripts/Invoke-SourceDiagnostic.ps1
+
+      - name: Publish safe summary
+        if: always()
+        run: ./Scripts/Invoke-SourceDiagnostic.ps1 -Publish
+
+      - name: Upload safe report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: source-diagnostic-report
+          path: ${{ runner.temp }}/source-diagnostic-public/report.json
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Remove private temporary files
+        if: always()
+        run: ./Scripts/Invoke-SourceDiagnostic.ps1 -Cleanup

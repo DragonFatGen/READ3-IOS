@@ -44,6 +44,10 @@ jobs:
             throw "LegadoCore tests failed with exit code $LASTEXITCODE"
           }
 
+      - name: Test diagnostic workflow helpers (offline)
+        shell: pwsh
+        run: ./Scripts/Tests/SourceDiagnostic.Tests.ps1
+
   macos-core-tests:
     name: macOS / Xcode Swift
     runs-on: macos-15
