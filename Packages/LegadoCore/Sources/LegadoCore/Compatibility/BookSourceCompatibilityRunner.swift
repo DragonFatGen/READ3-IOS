@@ -344,11 +344,14 @@ public struct BookSourceCompatibilityRunner: Sendable {
         return nil
     }
 
-    private static func redacted(_ message: String) -> String {
+    /// Sanitizes diagnostic text for display, limiting it to 500 characters.
+    /// Sensitive assignments hide the remainder of their line, including multi-part
+    /// authorization values and cookies. This is not a response-body sanitizer.
+    public static func redacted(_ message: String) -> String {
         var value = message
         let replacements = [
             (
-                #"(?i)(authorization|cookie|token|password|passwd|secret)(\s*[:=]\s*)[^\s,;}&]+"#,
+                #"(?i)(authorization|cookie|token|password|passwd|secret|login\w*|variable\w*)(["']?\s*[:=]\s*)[^\r\n]*"#,
                 "$1$2<redacted>"
             ),
             (

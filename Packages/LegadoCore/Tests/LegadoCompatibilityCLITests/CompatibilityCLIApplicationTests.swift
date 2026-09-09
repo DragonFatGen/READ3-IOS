@@ -4,6 +4,49 @@ import XCTest
 @testable import LegadoCore
 
 final class CompatibilityCLIApplicationTests: XCTestCase {
+    func testInvalidSourceShapeReturnsInputExitCodeWithoutRequests() async throws {
+        let file = try temporarySourceFile(data: Data("[]".utf8))
+        defer { try? FileManager.default.removeItem(at: file) }
+        let client = MockHTTPClient(error: .transportError("must not execute"))
+        let execution = await CompatibilityCLIApplication().run(
+            arguments: ["--source", file.path, "--keyword", "书", "--json"],
+            httpClient: client
+        )
+        XCTAssertEqual(execution.exitCode, .inputError)
+        let report = try JSONDecoder().decode(CompatibilityReportDTO.self, from: Data(execution.output.utf8))
+        XCTAssertEqual(report.failureOperation, "import")
+        let requests = await client.requests
+        XCTAssertTrue(requests.isEmpty)
+    }
+
+    func testArgumentErrorsDoNotEchoUntrustedValues() async {
+        for arguments in [["--token=private-value"], ["--book-index", "private-value"]] {
+            let execution = await CompatibilityCLIApplication().run(
+                arguments: arguments,
+                httpClient: MockHTTPClient(error: .transportError("must not execute"))
+            )
+            XCTAssertEqual(execution.exitCode, .inputError)
+            XCTAssertFalse(execution.output.contains("private-value"))
+        }
+    }
+
+    func testBothReportFormatsRedactMultipartCredentials() async throws {
+        let file = try temporarySourceFile(data: try fixture("chinese-source.json"))
+        defer { try? FileManager.default.removeItem(at: file) }
+        for format in [[], ["--json"]] {
+            let execution = await CompatibilityCLIApplication().run(
+                arguments: ["--source", file.path, "--keyword", "书"] + format,
+                httpClient: MockHTTPClient(error: .transportError(
+                    "Authorization: Bearer private-auth\nCookie: a=private-cookie; b=private-second\n"
+                    + "\"password\": \"private-password\"\nloginParams=private-login\nvariables=private-variable"
+                ))
+            )
+            XCTAssertEqual(execution.exitCode, .compatibilityFailure)
+            XCTAssertFalse(execution.output.contains("private-"))
+            XCTAssertTrue(execution.output.contains("<redacted>"))
+        }
+    }
+
     func testMissingSourceFileReturnsInputExitCode() async {
         let missing = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)

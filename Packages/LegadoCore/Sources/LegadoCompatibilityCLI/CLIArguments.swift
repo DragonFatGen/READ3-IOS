@@ -31,9 +31,9 @@ enum CLIArgumentError: Error, Equatable, LocalizedError {
         case let .missingValue(option): "Missing value for \(option)."
         case let .duplicateOption(option): "Option \(option) may only be supplied once."
         case let .missingRequiredOption(option): "Required option \(option) is missing."
-        case let .invalidInteger(option, value): "Invalid integer for \(option): \(value)."
+        case let .invalidInteger(option, _): "Invalid integer for \(option)."
         case let .outOfRange(option, description): "Invalid \(option): \(description)."
-        case let .unknownArgument(argument): "Unknown argument: \(argument)."
+        case .unknownArgument: "Unknown argument. Use --help for supported options."
         }
     }
 }

@@ -25,15 +25,15 @@ struct CompatibilityReportDTO: Codable, Equatable {
         importWarningCount = report.importWarnings.count
         migrationCount = report.migrations.count
         searchResultCount = report.searchResults.count
-        self.selectedBookName = selectedBookName
-        self.selectedBookAuthor = selectedBookAuthor
+        self.selectedBookName = selectedBookName.map(BookSourceCompatibilityRunner.redacted)
+        self.selectedBookAuthor = selectedBookAuthor.map(BookSourceCompatibilityRunner.redacted)
         chapterCount = report.chapters.count
-        selectedChapterName = report.selectedChapter?.name
+        selectedChapterName = (report.selectedChapter?.name).map(BookSourceCompatibilityRunner.redacted)
         contentSucceeded = report.content != nil
         contentCharacterCount = report.content.map { $0.content.count }
         failureCategory = report.failure?.stage.rawValue
         failureOperation = report.failure?.operation?.rawValue
-        errorMessage = report.failure?.message
+        errorMessage = (report.failure?.message).map(BookSourceCompatibilityRunner.redacted)
     }
 
     static func inputFailure(_ message: String) -> CompatibilityReportDTO {

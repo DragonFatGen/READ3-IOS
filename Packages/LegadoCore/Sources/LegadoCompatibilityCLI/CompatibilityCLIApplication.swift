@@ -54,7 +54,8 @@ struct CompatibilityCLIApplication {
         )
         let dto = CompatibilityReportDTO(report: report)
         return CLIExecution(
-            exitCode: report.isSuccessful ? .success : .compatibilityFailure,
+            exitCode: report.isSuccessful ? .success
+                : (report.failure?.operation == .import ? .inputError : .compatibilityFailure),
             output: render(dto, usesJSON: options.usesJSONOutput)
         )
     }

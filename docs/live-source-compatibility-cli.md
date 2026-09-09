@@ -35,7 +35,9 @@ swift run --package-path Packages/LegadoCore legado-compatibility `
   --json
 ```
 
-The source path and keyword are required. Optional arguments are:
+The source path and keyword are required. The file must contain a single source
+object (including supported legacy formats); arrays of sources are not accepted.
+Optional arguments are:
 
 | Argument | Default | Validation |
 | --- | ---: | --- |
@@ -56,11 +58,16 @@ content. It does not contain response bodies.
 | ---: | --- |
 | `0` | The complete chain succeeded |
 | `1` | Compatibility, parsing, selection, or network execution failed |
-| `2` | Arguments, source-file reading, or JSON input were invalid |
+| `2` | Arguments, source-file reading, JSON syntax, or source import were invalid |
 
 Failure categories, operations, and messages come from the compatibility
 runner, which redacts common authorization, cookie, password, secret, and token
-forms and limits diagnostic length.
+forms and limits diagnostic length. The shared public
+`BookSourceCompatibilityRunner.redacted(_:)` also bounds CLI names and error
+messages to 500 characters. Sensitive assignments hide the rest of their line
+to cover multi-part credentials. This is a diagnostic filter, not a tool for
+sanitizing response bodies or arbitrary private data. Argument errors do not
+echo untrusted argument values. `--help` exits with code 0.
 
 ## Network and fixture policy
 
