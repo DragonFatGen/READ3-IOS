@@ -201,7 +201,9 @@ final class CompatibilityCLIApplicationTests: XCTestCase {
 
     func testRequestConstructionFailureNeverSendsAndHasNoResponseStatus() async throws {
         var source = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture("chinese-source.json")) as? [String: Any])
-        source["header"] = "[\"private-invalid-header\"]"
+        // Compatible mode ignores malformed headers. An unsupported query charset
+        // instead fails during request encoding, before any HTTP client is called.
+        source["searchUrl"] = #"https://fixture.invalid/search?q={{key}},{"charset":"private-unsupported-charset"}"#
         let file = try temporarySourceFile(data: JSONSerialization.data(withJSONObject: source))
         defer { try? FileManager.default.removeItem(at: file) }
         let client = MockHTTPClient(error: .transportError("must not execute"))
