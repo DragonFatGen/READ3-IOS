@@ -15,6 +15,10 @@ struct CompatibilityReportDTO: Codable, Equatable {
     let contentCharacterCount: Int?
     let failureCategory: String?
     let failureOperation: String?
+    let requestFailureKind: String?
+    let networkErrorDomain: String?
+    let networkErrorCode: Int?
+    let httpStatusCode: Int?
     let errorMessage: String?
 
     init(report: CompatibilityReport) {
@@ -33,6 +37,10 @@ struct CompatibilityReportDTO: Codable, Equatable {
         contentCharacterCount = report.content.map { $0.content.count }
         failureCategory = report.failure?.stage.rawValue
         failureOperation = report.failure?.operation?.rawValue
+        requestFailureKind = report.failure?.requestDiagnostic?.kind.rawValue
+        networkErrorDomain = report.failure?.requestDiagnostic?.errorDomain
+        networkErrorCode = report.failure?.requestDiagnostic?.errorCode
+        httpStatusCode = report.failure?.requestDiagnostic?.httpStatusCode
         errorMessage = (report.failure?.message).map(BookSourceCompatibilityRunner.redacted)
     }
 
@@ -85,6 +93,10 @@ struct CompatibilityReportDTO: Codable, Equatable {
         self.failureCategory = failureCategory
         self.failureOperation = failureOperation
         self.errorMessage = errorMessage
+        requestFailureKind = nil
+        networkErrorDomain = nil
+        networkErrorCode = nil
+        httpStatusCode = nil
     }
 
     private static func completedStage(_ report: CompatibilityReport) -> String? {
@@ -113,6 +125,10 @@ struct CompatibilityReportRenderer {
             "Content characters: \(report.contentCharacterCount.map(String.init) ?? "n/a")",
             "Failure category: \(display(report.failureCategory))",
             "Failure operation: \(display(report.failureOperation))",
+            "Request failure kind: \(display(report.requestFailureKind))",
+            "Network error domain: \(display(report.networkErrorDomain))",
+            "Network error code: \(report.networkErrorCode.map(String.init) ?? "n/a")",
+            "HTTP status code: \(report.httpStatusCode.map(String.init) ?? "n/a")",
             "Error: \(display(report.errorMessage))"
         ].joined(separator: "\n")
     }

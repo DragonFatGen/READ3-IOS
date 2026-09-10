@@ -1,4 +1,4 @@
-# Only fixed messages, allowlisted enums, booleans and integer counts may leave
+# Only fixed messages, allowlisted enums/domains, booleans and numeric metadata may leave
 # the private runner directory. The CLI's free-form text is never a public API.
 Set-StrictMode -Version Latest
 
@@ -48,6 +48,11 @@ function New-DiagnosticStatus {
         contentCharacterCount = $null
         failureCategory = $null
         failureOperation = $null
+        requestFailureKind = $null
+        networkErrorDomain = $null
+        networkErrorCode = $null
+        httpStatusCode = $null
+        requestFailureSummary = $null
         errorSummary = $messages[$Status]
     }
 }
@@ -78,6 +83,34 @@ function ConvertTo-PublicDiagnostic {
             $null -ne $raw['failureCategory'] -or $null -ne $raw['failureOperation'])) { throw 'schema' }
         if (-not $raw['successful'] -and $null -eq $raw['failureCategory']) { throw 'schema' }
 
+        $requestMessages = @{
+            requestConstruction = 'Request URL or options could not be constructed.'
+            dns = 'Host name resolution failed.'
+            connection = 'Network connection failed or was lost.'
+            tls = 'TLS negotiation or certificate validation failed.'
+            timeout = 'The request timed out.'
+            cancelled = 'The request was cancelled.'
+            otherNetwork = 'Another recognized network error occurred.'
+            unknown = 'The available error metadata does not identify a cause.'
+        }
+        $kind = $raw['requestFailureKind']
+        if ($null -ne $kind -and ($kind -isnot [string] -or
+            $kind -cnotin @($requestMessages.Keys))) { throw 'schema' }
+        $domain = $raw['networkErrorDomain']
+        if ($null -ne $domain -and ($domain -isnot [string] -or
+            $domain -cnotin @('NSURLErrorDomain', 'NSPOSIXErrorDomain', 'NSOSStatusErrorDomain'))) {
+            throw 'schema'
+        }
+        foreach ($field in @('networkErrorCode', 'httpStatusCode')) {
+            $value = $raw[$field]
+            if ($null -ne $value -and ($value -isnot [int] -and $value -isnot [long])) { throw 'schema' }
+        }
+        if ($null -ne $raw['httpStatusCode'] -and
+            ($raw['httpStatusCode'] -lt 100 -or $raw['httpStatusCode'] -gt 599)) { throw 'schema' }
+        if (($null -eq $domain) -ne ($null -eq $raw['networkErrorCode'])) { throw 'schema' }
+        if ($null -eq $kind -and ($null -ne $domain -or $null -ne $raw['httpStatusCode'])) { throw 'schema' }
+        if ($null -ne $kind -and ($raw['successful'] -or $raw['failureCategory'] -cne 'request')) { throw 'schema' }
+
         $messages = @{
             input = 'The source input could not be read or imported.'
             import = 'Source import failed.'
@@ -101,6 +134,11 @@ function ConvertTo-PublicDiagnostic {
             contentCharacterCount = $raw['contentCharacterCount']
             failureCategory = $raw['failureCategory']
             failureOperation = $raw['failureOperation']
+            requestFailureKind = $kind
+            networkErrorDomain = $domain
+            networkErrorCode = $raw['networkErrorCode']
+            httpStatusCode = $raw['httpStatusCode']
+            requestFailureSummary = if ($null -eq $kind) { $null } else { $requestMessages[$kind] }
             # Never carry errorMessage, titles, URLs or arbitrary extra fields forward.
             errorSummary = if ($raw['successful']) { $null } else { $messages[$raw['failureCategory']] }
         }

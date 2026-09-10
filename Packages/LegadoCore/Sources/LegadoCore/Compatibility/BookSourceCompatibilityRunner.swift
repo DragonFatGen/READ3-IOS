@@ -20,11 +20,18 @@ public struct CompatibilityFailure: Codable, Sendable, Equatable {
     /// The business operation active when a cross-cutting failure occurred.
     public let operation: CompatibilityStage?
     public let message: String
+    public let requestDiagnostic: RequestDiagnostic?
 
-    public init(stage: CompatibilityStage, operation: CompatibilityStage?, message: String) {
+    public init(
+        stage: CompatibilityStage,
+        operation: CompatibilityStage?,
+        message: String,
+        requestDiagnostic: RequestDiagnostic? = nil
+    ) {
         self.stage = stage
         self.operation = operation
         self.message = message
+        self.requestDiagnostic = requestDiagnostic
     }
 }
 
@@ -221,7 +228,20 @@ public struct BookSourceCompatibilityRunner: Sendable {
         default:
             category = Self.messageCategory(message) ?? operation
         }
-        return CompatibilityFailure(stage: category, operation: operation, message: message)
+        let diagnostic: RequestDiagnostic?
+        switch error {
+        case let value as BookSearchError: diagnostic = value.requestDiagnostic
+        case let value as BookInfoError: diagnostic = value.requestDiagnostic
+        case let value as TOCError: diagnostic = value.requestDiagnostic
+        case let value as ContentError: diagnostic = value.requestDiagnostic
+        case let HTTPError.networkFailure(value): diagnostic = value
+        default: diagnostic = nil
+        }
+        let safeMessage = diagnostic.map {
+            "Request failed (\($0.kind.rawValue)); underlying details <redacted>."
+        } ?? message
+        return CompatibilityFailure(stage: category, operation: operation, message: safeMessage,
+                                    requestDiagnostic: diagnostic)
     }
 
     private func classify(
@@ -303,7 +323,7 @@ public struct BookSourceCompatibilityRunner: Sendable {
         case .unsupportedCharset, .encodingFailed, .decodingFailed, .responseDecodingFailed:
             return .charset
         case .invalidURL, .invalidRequestOptions, .invalidHeaders, .unsupportedMethod,
-             .transportError, .invalidResponse, .httpStatus:
+             .transportError, .networkFailure, .invalidResponse, .httpStatus:
             return .request
         }
     }

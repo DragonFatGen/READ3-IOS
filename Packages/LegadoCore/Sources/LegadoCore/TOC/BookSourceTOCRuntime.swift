@@ -135,10 +135,16 @@ public struct BookSourceTOCRuntime: Sendable {
                 )
             )
         } catch {
-            throw TOCError.requestBuildFailed(url: url, message: error.localizedDescription)
+            throw TOCError.requestBuildFailed(
+                url: url, message: error.localizedDescription, diagnostic: .construction(error)
+            )
         }
         do { return try await httpClient.send(request) }
-        catch { throw TOCError.networkFailed(url: url, message: error.localizedDescription) }
+        catch {
+            throw TOCError.networkFailed(
+                url: url, message: error.localizedDescription, diagnostic: .network(error)
+            )
+        }
     }
 
     private func parse(

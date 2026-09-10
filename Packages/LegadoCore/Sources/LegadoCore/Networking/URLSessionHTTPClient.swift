@@ -46,7 +46,7 @@ public struct URLSessionHTTPClient: HTTPClient {
         } catch let error as HTTPError {
             throw error
         } catch {
-            throw HTTPError.transportError(String(describing: error))
+            throw HTTPError.networkFailure(.network(error))
         }
     }
 
@@ -62,7 +62,9 @@ public struct URLSessionHTTPClient: HTTPClient {
             let task = session.dataTask(with: request) { data, response, error in
                 defer { session.finishTasksAndInvalidate() }
                 if let error {
-                    continuation.resume(throwing: error)
+                    continuation.resume(throwing: HTTPError.networkFailure(.network(
+                        error, httpStatusCode: (response as? HTTPURLResponse)?.statusCode
+                    )))
                 } else if let data, let response {
                     continuation.resume(returning: (data, response))
                 } else {

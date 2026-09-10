@@ -64,6 +64,49 @@ Assert-True ((Get-DiagnosticExitCode 1 $report) -eq 1) 'Compatibility failure hi
 $public = ($report | ConvertTo-Json) + (ConvertTo-DiagnosticSummary $report)
 Assert-True ($public -notmatch 'private-|https://|Authorization|Cookie|<script>') 'Sensitive error text leaked.'
 Assert-True ($report.errorSummary -eq 'Request construction or network execution failed.') 'Unsafe error summary.'
+foreach ($field in @('requestFailureKind', 'networkErrorDomain', 'networkErrorCode', 'httpStatusCode', 'requestFailureSummary')) {
+    Assert-True ($null -eq $report[$field]) 'Old report must leave new diagnostics empty.'
+}
+
+$network = $failure | ConvertFrom-Json -AsHashtable
+$network.requestFailureKind = 'timeout'
+$network.networkErrorDomain = 'NSURLErrorDomain'
+$network.networkErrorCode = -1001
+$network.httpStatusCode = $null
+$network.requestFailureSummary = 'private-untrusted-summary'
+$report = ConvertTo-PublicDiagnostic ($network | ConvertTo-Json) 1
+Assert-True ($report.requestFailureKind -ceq 'timeout' -and $report.networkErrorCode -eq -1001) 'Network metadata lost.'
+Assert-True ($report.networkErrorDomain -ceq 'NSURLErrorDomain' -and $null -eq $report.httpStatusCode) 'Invented response or lost domain.'
+Assert-True ($report.requestFailureSummary -ceq 'The request timed out.') 'Untrusted request summary accepted.'
+$public = ($report | ConvertTo-Json) + (ConvertTo-DiagnosticSummary $report)
+Assert-True ($public -notmatch 'private-|https://|Authorization|Cookie|<script>') 'Structured diagnostics leaked private data.'
+Assert-True ($public.Contains('networkErrorCode') -and $public.Contains('-1001')) 'Step summary lost metadata.'
+Assert-True ((Get-DiagnosticExitCode 1 $report) -eq 1) 'Network failure exit changed.'
+foreach ($kind in @('requestConstruction', 'dns', 'connection', 'tls', 'cancelled', 'otherNetwork', 'unknown')) {
+    $sample = $network.Clone()
+    $sample.requestFailureKind = $kind
+    $sample.networkErrorDomain = $null
+    $sample.networkErrorCode = $null
+    $report = ConvertTo-PublicDiagnostic ($sample | ConvertTo-Json) 1
+    Assert-True ($report.requestFailureKind -ceq $kind -and $null -ne $report.requestFailureSummary) 'Allowed kind lost.'
+}
+$received = $network.Clone()
+$received.httpStatusCode = 503
+$report = ConvertTo-PublicDiagnostic ($received | ConvertTo-Json) 1
+Assert-True ($report.httpStatusCode -eq 503) 'Actual response status lost.'
+foreach ($case in @(
+    @('requestFailureKind', 'private-kind'), @('networkErrorDomain', 'private-domain'),
+    @('networkErrorCode', 'private-code'), @('networkErrorCode', 1.5), @('networkErrorCode', $true),
+    @('httpStatusCode', '503'), @('httpStatusCode', 0), @('httpStatusCode', 600),
+    @('requestFailureKind', $null), @('networkErrorDomain', $null), @('networkErrorCode', $null)
+)) {
+    $invalid = $network.Clone()
+    $invalid[$case[0]] = $case[1]
+    $report = ConvertTo-PublicDiagnostic ($invalid | ConvertTo-Json) 1
+    Assert-True ($report.status -eq 'invalidReport') 'Invalid diagnostic metadata accepted.'
+    Assert-True ((($report | ConvertTo-Json) + (ConvertTo-DiagnosticSummary $report)) -notmatch 'private-') 'Rejected metadata leaked.'
+    Assert-True ((Get-DiagnosticExitCode 1 $report) -ne 0) 'Invalid metadata became success.'
+}
 
 $inputFailure = '{"successful":false,"contentSucceeded":false,"searchResultCount":0,"chapterCount":0,"failureCategory":"input","failureOperation":"import"}'
 Assert-True ((Get-DiagnosticExitCode 2 (ConvertTo-PublicDiagnostic $inputFailure 2)) -eq 2) 'Input exit changed.'

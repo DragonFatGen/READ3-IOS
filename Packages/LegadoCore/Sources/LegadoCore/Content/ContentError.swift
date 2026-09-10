@@ -1,8 +1,8 @@
 import Foundation
 
 public enum ContentError: Error, Sendable, Equatable {
-    case requestBuildFailed(url: String, message: String)
-    case networkFailed(url: String, message: String)
+    case requestBuildFailed(url: String, message: String, diagnostic: RequestDiagnostic? = nil)
+    case networkFailed(url: String, message: String, diagnostic: RequestDiagnostic? = nil)
     case responseDecodeFailed(url: String, message: String)
     case contentRuleFailed(String)
     case nextPageRuleFailed(String)
@@ -16,9 +16,9 @@ public enum ContentError: Error, Sendable, Equatable {
 extension ContentError: LocalizedError {
     public var errorDescription: String? {
         switch self {
-        case let .requestBuildFailed(url, message):
+        case let .requestBuildFailed(url, message, _):
             "Content request construction failed for \(url): \(message)"
-        case let .networkFailed(url, message):
+        case let .networkFailed(url, message, _):
             "Content request failed for \(url): \(message)"
         case let .responseDecodeFailed(url, message):
             "Content response decoding failed for \(url): \(message)"
@@ -36,6 +36,16 @@ extension ContentError: LocalizedError {
             "The structured content rule is unsupported: \(rule)"
         case .unsupportedJavaScriptNetworkHost:
             "This content rule requires the deferred production JavaScript network host."
+        }
+    }
+}
+
+extension ContentError {
+    var requestDiagnostic: RequestDiagnostic? {
+        switch self {
+        case let .requestBuildFailed(_, _, diagnostic),
+             let .networkFailed(_, _, diagnostic): diagnostic
+        default: nil
         }
     }
 }

@@ -6,6 +6,7 @@ public enum HTTPError: Error, Equatable, Sendable {
     case invalidHeaders(String)
     case unsupportedMethod(String)
     case transportError(String)
+    case networkFailure(RequestDiagnostic)
     case invalidResponse
     case unsupportedCharset(String)
     case encodingFailed(String)
@@ -22,6 +23,7 @@ extension HTTPError: LocalizedError {
         case let .invalidHeaders(field): "Invalid HTTP headers in \(field)."
         case let .unsupportedMethod(method): "Unsupported HTTP method: \(method)"
         case let .transportError(message): "HTTP transport failed: \(message)"
+        case let .networkFailure(diagnostic): "HTTP transport failed (\(diagnostic.kind.rawValue))."
         case .invalidResponse: "The HTTP response is invalid."
         case let .unsupportedCharset(charset): "Unsupported charset: \(charset)"
         case let .encodingFailed(charset): "Text encoding failed for charset: \(charset)"

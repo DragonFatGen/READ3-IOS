@@ -47,12 +47,18 @@ public struct BookSourceBookInfoRuntime: Sendable {
                 )
             )
         } catch {
-            throw BookInfoError.requestBuildFailed(error.localizedDescription)
+            throw BookInfoError.requestBuildFailed(
+                error.localizedDescription, diagnostic: .construction(error)
+            )
         }
 
         let response: HTTPResponse
         do { response = try await httpClient.send(request) }
-        catch { throw BookInfoError.networkFailed(error.localizedDescription) }
+        catch {
+            throw BookInfoError.networkFailed(
+                error.localizedDescription, diagnostic: .network(error)
+            )
+        }
 
         let body: String
         do { body = try response.text(decoder: textDecoder) }

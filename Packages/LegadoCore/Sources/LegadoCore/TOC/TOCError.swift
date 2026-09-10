@@ -1,8 +1,8 @@
 import Foundation
 
 public enum TOCError: Error, Sendable, Equatable {
-    case requestBuildFailed(url: String, message: String)
-    case networkFailed(url: String, message: String)
+    case requestBuildFailed(url: String, message: String, diagnostic: RequestDiagnostic? = nil)
+    case networkFailed(url: String, message: String, diagnostic: RequestDiagnostic? = nil)
     case responseDecodeFailed(url: String, message: String)
     case chapterListRuleFailed(String)
     case nextPageRuleFailed(String)
@@ -16,9 +16,9 @@ public enum TOCError: Error, Sendable, Equatable {
 extension TOCError: LocalizedError {
     public var errorDescription: String? {
         switch self {
-        case let .requestBuildFailed(url, message):
+        case let .requestBuildFailed(url, message, _):
             "TOC request construction failed for \(url): \(message)"
-        case let .networkFailed(url, message):
+        case let .networkFailed(url, message, _):
             "TOC request failed for \(url): \(message)"
         case let .responseDecodeFailed(url, message):
             "TOC response decoding failed for \(url): \(message)"
@@ -31,6 +31,16 @@ extension TOCError: LocalizedError {
         case let .unsupportedStructuredRule(rule): "The structured TOC rule is unsupported: \(rule)"
         case .unsupportedJavaScriptNetworkHost:
             "This TOC rule requires the deferred production JavaScript network host."
+        }
+    }
+}
+
+extension TOCError {
+    var requestDiagnostic: RequestDiagnostic? {
+        switch self {
+        case let .requestBuildFailed(_, _, diagnostic),
+             let .networkFailed(_, _, diagnostic): diagnostic
+        default: nil
         }
     }
 }

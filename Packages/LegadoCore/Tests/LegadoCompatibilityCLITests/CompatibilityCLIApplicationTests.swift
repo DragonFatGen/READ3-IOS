@@ -123,6 +123,10 @@ final class CompatibilityCLIApplicationTests: XCTestCase {
         XCTAssertEqual(report.selectedBookName, "三体")
         XCTAssertEqual(report.failureCategory, "request")
         XCTAssertEqual(report.failureOperation, "bookInfo")
+        XCTAssertEqual(report.requestFailureKind, "unknown")
+        XCTAssertNil(report.networkErrorDomain)
+        XCTAssertNil(report.networkErrorCode)
+        XCTAssertNil(report.httpStatusCode)
     }
 
     func testFailureOutputRetainsRunnerRedaction() async throws {
@@ -149,6 +153,104 @@ final class CompatibilityCLIApplicationTests: XCTestCase {
         XCTAssertEqual(execution.exitCode, .inputError)
         XCTAssertTrue(execution.output.contains("--source"))
         XCTAssertTrue(execution.output.contains("Usage:"))
+    }
+
+    func testStructuredNetworkFailureSurvivesEveryRuntimeAndCLIJSON() async throws {
+        let file = try temporarySourceFile(data: try fixture("chinese-source.json"))
+        defer { try? FileManager.default.removeItem(at: file) }
+        let operations = ["search", "bookInfo", "toc", "content"]
+        let completed = ["import", "search", "bookInfo", "toc"]
+        for index in operations.indices {
+            let diagnostic = RequestDiagnostic.network(NSError(
+                domain: NSURLErrorDomain, code: URLError.Code.timedOut.rawValue,
+                userInfo: [NSLocalizedDescriptionKey: "https://private-host.invalid/?session=private-query"]
+            ), httpStatusCode: index == 3 ? 503 : nil)
+            let responses = Array(try successfulResponses().prefix(index)) + [.failure(.networkFailure(diagnostic))]
+            let execution = await CompatibilityCLIApplication().run(
+                arguments: ["--source", file.path, "--keyword", "书", "--json"],
+                httpClient: MockHTTPClient(results: responses)
+            )
+            XCTAssertEqual(execution.exitCode, .compatibilityFailure)
+            let report = try JSONDecoder().decode(CompatibilityReportDTO.self, from: Data(execution.output.utf8))
+            XCTAssertEqual(report.completedStage, completed[index])
+            XCTAssertEqual(report.failureCategory, "request")
+            XCTAssertEqual(report.failureOperation, operations[index])
+            XCTAssertEqual(report.requestFailureKind, "timeout")
+            XCTAssertEqual(report.networkErrorDomain, NSURLErrorDomain)
+            XCTAssertEqual(report.networkErrorCode, -1001)
+            XCTAssertEqual(report.httpStatusCode, index == 3 ? 503 : nil)
+            XCTAssertFalse(execution.output.contains("private-"))
+            XCTAssertFalse(execution.output.contains("https://"))
+        }
+    }
+
+    func testRawInjectedNetworkErrorIsCapturedAtRuntimeBoundary() async throws {
+        let file = try temporarySourceFile(data: try fixture("chinese-source.json"))
+        defer { try? FileManager.default.removeItem(at: file) }
+        let execution = await CompatibilityCLIApplication().run(
+            arguments: ["--source", file.path, "--keyword", "书", "--json"],
+            httpClient: DNSFailureClient()
+        )
+        XCTAssertEqual(execution.exitCode, .compatibilityFailure)
+        let report = try JSONDecoder().decode(CompatibilityReportDTO.self, from: Data(execution.output.utf8))
+        XCTAssertEqual(report.requestFailureKind, "dns")
+        XCTAssertEqual(report.networkErrorCode, -1003)
+        XCTAssertNil(report.httpStatusCode)
+        XCTAssertFalse(execution.output.contains("private-"))
+    }
+
+    func testRequestConstructionFailureNeverSendsAndHasNoResponseStatus() async throws {
+        var source = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture("chinese-source.json")) as? [String: Any])
+        source["header"] = "[\"private-invalid-header\"]"
+        let file = try temporarySourceFile(data: JSONSerialization.data(withJSONObject: source))
+        defer { try? FileManager.default.removeItem(at: file) }
+        let client = MockHTTPClient(error: .transportError("must not execute"))
+        let execution = await CompatibilityCLIApplication().run(
+            arguments: ["--source", file.path, "--keyword", "书", "--json"], httpClient: client
+        )
+        XCTAssertEqual(execution.exitCode, .compatibilityFailure)
+        let report = try JSONDecoder().decode(CompatibilityReportDTO.self, from: Data(execution.output.utf8))
+        XCTAssertEqual(report.completedStage, "import")
+        XCTAssertEqual(report.requestFailureKind, "requestConstruction")
+        XCTAssertEqual(report.failureOperation, "search")
+        XCTAssertNil(report.networkErrorDomain)
+        XCTAssertNil(report.networkErrorCode)
+        XCTAssertNil(report.httpStatusCode)
+        XCTAssertFalse(execution.output.contains("private-"))
+        let requests = await client.requests
+        XCTAssertTrue(requests.isEmpty)
+    }
+
+    func testOldCLIJSONWithoutDiagnosticFieldsStillDecodes() throws {
+        let dto = CompatibilityReportDTO(report: CompatibilityReport())
+        var json = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(dto)) as? [String: Any])
+        for key in ["requestFailureKind", "networkErrorDomain", "networkErrorCode", "httpStatusCode"] {
+            json.removeValue(forKey: key)
+        }
+        let old = try JSONDecoder().decode(CompatibilityReportDTO.self, from: JSONSerialization.data(withJSONObject: json))
+        XCTAssertNil(old.requestFailureKind)
+        XCTAssertNil(old.networkErrorDomain)
+        XCTAssertNil(old.networkErrorCode)
+        XCTAssertNil(old.httpStatusCode)
+    }
+
+    func testNonSuccessStatusStillAllowsResponseBodyParsing() async throws {
+        let file = try temporarySourceFile(data: try fixture("chinese-source.json"))
+        defer { try? FileManager.default.removeItem(at: file) }
+        var responses = try successfulResponses()
+        responses[0] = .success(HTTPResponse(
+            statusCode: 503, data: try fixture("search.html"),
+            finalURL: try XCTUnwrap(URL(string: "https://fixture.invalid/search"))
+        ))
+        let execution = await CompatibilityCLIApplication().run(
+            arguments: ["--source", file.path, "--keyword", "书", "--json"],
+            httpClient: MockHTTPClient(results: responses)
+        )
+        XCTAssertEqual(execution.exitCode, .success)
+        let report = try JSONDecoder().decode(CompatibilityReportDTO.self, from: Data(execution.output.utf8))
+        XCTAssertTrue(report.successful)
+        XCTAssertNil(report.requestFailureKind)
+        XCTAssertNil(report.httpStatusCode)
     }
 
     private func successfulResponses() throws -> [Result<HTTPResponse, HTTPError>] {
@@ -191,5 +293,12 @@ final class CompatibilityCLIApplicationTests: XCTestCase {
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
+    }
+}
+
+private struct DNSFailureClient: HTTPClient {
+    func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        throw NSError(domain: NSURLErrorDomain, code: URLError.Code.cannotFindHost.rawValue,
+                      userInfo: [NSLocalizedDescriptionKey: "private-host and private-token"])
     }
 }

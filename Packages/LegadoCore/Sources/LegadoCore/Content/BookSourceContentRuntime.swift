@@ -162,12 +162,15 @@ public struct BookSourceContentRuntime: Sendable {
         } catch {
             throw ContentError.requestBuildFailed(
                 url: url,
-                message: error.localizedDescription
+                message: error.localizedDescription,
+                diagnostic: .construction(error)
             )
         }
         do { return try await httpClient.send(request) }
         catch {
-            throw ContentError.networkFailed(url: url, message: error.localizedDescription)
+            throw ContentError.networkFailed(
+                url: url, message: error.localizedDescription, diagnostic: .network(error)
+            )
         }
     }
 
