@@ -1,4 +1,4 @@
-param([switch]$Publish, [switch]$Cleanup)
+param([switch]$Publish, [switch]$Cleanup, [switch]$CheckToolchain)
 
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'SourceDiagnostic.psm1') -Force
@@ -7,6 +7,7 @@ $runnerDirectory = [System.IO.Path]::TrimEndingDirectorySeparator([System.IO.Pat
 $privateDirectory = Join-Path $runnerDirectory 'source-diagnostic-private'
 $publicDirectory = Join-Path $runnerDirectory 'source-diagnostic-public'
 $reportPath = Join-Path $publicDirectory 'report.json'
+$environmentPath = Join-Path $publicDirectory 'environment.json'
 $utf8 = [System.Text.UTF8Encoding]::new($false)
 
 function Remove-PrivateDiagnosticFiles {
@@ -24,6 +25,41 @@ if ($Cleanup) {
     exit 0
 }
 
+function Get-RecordedEnvironment {
+    $version = $null
+    if (Test-Path -LiteralPath $environmentPath) {
+        try {
+            $saved = Get-Content -LiteralPath $environmentPath -Raw | ConvertFrom-Json -AsHashtable
+            if ($saved.swiftVersion -is [string] -and $saved.swiftVersion -cmatch '^\d{1,3}\.\d{1,3}(?:\.\d{1,3})?$') {
+                $version = $saved.swiftVersion
+            }
+        } catch { } # Only validated numeric version metadata can be published.
+    }
+    return New-DiagnosticEnvironment -SwiftVersion $version
+}
+
+if ($CheckToolchain) {
+    $version = $null
+    $code = 1
+    try {
+        [System.IO.Directory]::CreateDirectory($privateDirectory) | Out-Null
+        $swift = (Get-Command swift -CommandType Application -ErrorAction Stop).Source
+        $versionCode = Invoke-DiagnosticProcess -Executable $swift -Arguments @('--version') `
+            -Directory $privateDirectory -Prefix 'version' -TimeoutSeconds 30
+        if ($versionCode -ne 0) { throw 'version check failed' }
+        $version = ConvertTo-DiagnosticSwiftVersion ([System.IO.File]::ReadAllText((Join-Path $privateDirectory 'version.stdout')))
+        if ([version]$version -lt [version]'6.0') { throw 'Swift 6.0 or newer required' }
+        $code = 0
+    } catch {
+        Write-Output 'Swift toolchain check failed; Swift 6.0 or newer is required.'
+    } finally {
+        [System.IO.Directory]::CreateDirectory($publicDirectory) | Out-Null
+        [System.IO.File]::WriteAllText($environmentPath, ((New-DiagnosticEnvironment $version) | ConvertTo-Json), $utf8)
+        try { Remove-PrivateDiagnosticFiles } catch { $code = 1 }
+    }
+    exit $code
+}
+
 if ($Publish) {
     $missingReport = -not (Test-Path -LiteralPath $reportPath)
     if ($missingReport) {
@@ -33,6 +69,8 @@ if ($Publish) {
     } else {
         $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json -AsHashtable
     }
+    $report['environment'] = Get-RecordedEnvironment
+    [System.IO.File]::WriteAllText($reportPath, ($report | ConvertTo-Json -Depth 4), $utf8)
     [System.IO.File]::AppendAllText($env:GITHUB_STEP_SUMMARY, (ConvertTo-DiagnosticSummary $report), $utf8)
     if ($missingReport) { exit 1 }
     exit 0
@@ -72,10 +110,11 @@ try {
     $binaryDirectory = [System.IO.Path]::GetFullPath(
         [System.IO.File]::ReadAllText((Join-Path $privateDirectory 'bin-path.stdout')).Trim())
     $buildRoot = [System.IO.Path]::GetFullPath('Packages/LegadoCore/.build') + [System.IO.Path]::DirectorySeparatorChar
-    if (-not $binaryDirectory.StartsWith($buildRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+    $pathComparison = if ($IsWindows) { [System.StringComparison]::OrdinalIgnoreCase } else { [System.StringComparison]::Ordinal }
+    if (-not $binaryDirectory.StartsWith($buildRoot, $pathComparison)) {
         throw 'unexpected binary directory'
     }
-    $executable = Join-Path $binaryDirectory 'legado-compatibility.exe'
+    $executable = Join-Path $binaryDirectory (Get-DiagnosticExecutableName)
     if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) { throw 'binary missing' }
     $sourcePath = Join-Path $privateDirectory 'source.json'
     # Write the original string, not a deserialize/serialize round trip; no added newline or BOM.

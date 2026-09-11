@@ -2,6 +2,33 @@
 # the private runner directory. The CLI's free-form text is never a public API.
 Set-StrictMode -Version Latest
 
+function Get-DiagnosticExecutableName {
+    if ($IsWindows) { return 'legado-compatibility.exe' }
+    return 'legado-compatibility'
+}
+
+function ConvertTo-DiagnosticSwiftVersion {
+    param([string]$Output)
+    # Extract only the numeric release from Swift/Apple Swift output, never raw text.
+    if ($Output -cmatch '(?m)^(?:Apple )?Swift version (\d{1,3}\.\d{1,3}(?:\.\d{1,3})?)(?=\s|$)') {
+        return $Matches[1]
+    }
+    throw 'Unrecognized Swift version output.'
+}
+
+function New-DiagnosticEnvironment {
+    param([AllowNull()][string]$SwiftVersion)
+    if ($SwiftVersion -and $SwiftVersion -cnotmatch '^\d{1,3}\.\d{1,3}(?:\.\d{1,3})?$') {
+        throw 'Invalid Swift version metadata.'
+    }
+    return [ordered]@{
+        platform = if ($IsWindows) { 'Windows' } elseif ($IsMacOS) { 'macOS' } else { 'other' }
+        architecture = [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString()
+        toolchain = if ($IsWindows) { 'Swift 6.3.3 release' } elseif ($IsMacOS) { 'Runner Xcode Swift' } else { 'other' }
+        swiftVersion = if ($SwiftVersion) { $SwiftVersion } else { $null }
+    }
+}
+
 function Get-DiagnosticOptions {
     param([hashtable]$Inputs, [string]$SourceJSON)
     if ([string]::IsNullOrWhiteSpace($SourceJSON)) { throw 'missingSecret' }
@@ -156,7 +183,12 @@ function ConvertTo-DiagnosticSummary {
     param([System.Collections.IDictionary]$Report)
     # Even the sanitized representation is escaped as text, never executable markup.
     $text = $Report | ConvertTo-Json -Depth 4
-    return "## Source diagnostic`n`n<pre>" + [System.Net.WebUtility]::HtmlEncode($text) + "</pre>`n"
+    $platform = (New-DiagnosticEnvironment).platform
+    return "## Source diagnostic / $platform`n`n" +
+        "Compare actual swiftVersion, toolchain and architecture in both reports before attributing differences to the OS. " +
+        "Windows requests Swift 6.3.3; macOS uses runner Xcode Swift and may have a different version. " +
+        "A null version means toolchain verification was unavailable.`n`n<pre>" +
+        [System.Net.WebUtility]::HtmlEncode($text) + "</pre>`n"
 }
 
 function Invoke-DiagnosticProcess {
@@ -198,4 +230,5 @@ function Invoke-DiagnosticProcess {
 
 Export-ModuleMember -Function Get-DiagnosticOptions, New-DiagnosticStatus,
     ConvertTo-PublicDiagnostic, Get-DiagnosticExitCode, ConvertTo-DiagnosticSummary,
-    Invoke-DiagnosticProcess
+    Invoke-DiagnosticProcess, Get-DiagnosticExecutableName, ConvertTo-DiagnosticSwiftVersion,
+    New-DiagnosticEnvironment

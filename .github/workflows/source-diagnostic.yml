@@ -29,7 +29,16 @@ permissions:
 
 jobs:
   diagnostic:
-    runs-on: windows-2022
+    name: Source diagnostic / ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Windows
+            runner: windows-2022
+          - platform: macOS
+            runner: macos-15
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 25
     defaults:
       run:
@@ -42,10 +51,19 @@ jobs:
           persist-credentials: false
 
       - name: Install Swift 6.3.3
+        if: runner.os == 'Windows'
         uses: compnerd/gha-setup-swift@main
         with:
           swift-version: swift-6.3.3-release
           swift-build: 6.3.3-RELEASE
+
+      # macOS uses the runner's Xcode Swift, as in Core Tests. Record the actual
+      # version on both platforms rather than assuming matching toolchains.
+      - name: Check and record Swift version
+        run: ./Scripts/Invoke-SourceDiagnostic.ps1 -CheckToolchain
+
+      - name: Test diagnostic workflow helpers (offline)
+        run: ./Scripts/Tests/SourceDiagnostic.Tests.ps1
 
       - name: Run source diagnostic
         env:
@@ -65,7 +83,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: source-diagnostic-report
+          name: source-diagnostic-report-${{ matrix.platform }}
           path: ${{ runner.temp }}/source-diagnostic-public/report.json
           if-no-files-found: error
           retention-days: 3

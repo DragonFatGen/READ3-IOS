@@ -22,6 +22,16 @@ function Assert-Throws([scriptblock]$Action) {
     Assert-True $didThrow 'Expected input validation to fail.'
 }
 
+Assert-True ((ConvertTo-DiagnosticSwiftVersion "Swift version 6.3.3 (release)`nTarget: private-target") -ceq '6.3.3') 'Windows Swift version lost.'
+Assert-True ((ConvertTo-DiagnosticSwiftVersion 'Apple Swift version 6.2 (swiftlang-build clang-build)') -ceq '6.2') 'Apple Swift version lost.'
+Assert-Throws { ConvertTo-DiagnosticSwiftVersion 'private-error https://fixture.invalid/token' }
+Assert-Throws { New-DiagnosticEnvironment '6.3.3 private-token' }
+Assert-True ($null -eq (New-DiagnosticEnvironment).swiftVersion) 'Missing toolchain version was invented.'
+$environment = New-DiagnosticEnvironment '6.3.3'
+Assert-True ($environment.swiftVersion -ceq '6.3.3') 'Recorded version changed.'
+$expectedExecutable = if ($IsWindows) { 'legado-compatibility.exe' } else { 'legado-compatibility' }
+Assert-True ((Get-DiagnosticExecutableName) -ceq $expectedExecutable) 'Wrong platform executable name.'
+
 $inputs = @{ keyword = '示例'; search_page = '1'; book_index = '0'; chapter_index = '0'; maximum_page_count = '3' }
 $source = '{"bookSourceName":"Synthetic","bookSourceUrl":"https://fixture.invalid"}'
 $options = Get-DiagnosticOptions $inputs $source
@@ -82,6 +92,12 @@ $public = ($report | ConvertTo-Json) + (ConvertTo-DiagnosticSummary $report)
 Assert-True ($public -notmatch 'private-|https://|Authorization|Cookie|<script>') 'Structured diagnostics leaked private data.'
 Assert-True ($public.Contains('networkErrorCode') -and $public.Contains('-1001')) 'Step summary lost metadata.'
 Assert-True ((Get-DiagnosticExitCode 1 $report) -eq 1) 'Network failure exit changed.'
+$unknown = $network.Clone()
+$unknown.requestFailureKind = 'unknown'
+$unknown.networkErrorCode = -1
+$report = ConvertTo-PublicDiagnostic ($unknown | ConvertTo-Json) 1
+Assert-True ($report.requestFailureKind -ceq 'unknown' -and $report.networkErrorDomain -ceq 'NSURLErrorDomain' -and
+    $report.networkErrorCode -eq -1 -and $null -eq $report.httpStatusCode) 'Unknown search request evidence changed.'
 foreach ($kind in @('requestConstruction', 'dns', 'connection', 'tls', 'cancelled', 'otherNetwork', 'unknown')) {
     $sample = $network.Clone()
     $sample.requestFailureKind = $kind
@@ -127,7 +143,7 @@ $escaped = ConvertTo-DiagnosticSummary @{ text = '</pre><script>alert(1)</script
 Assert-True ($escaped -notmatch '<script>' -and $escaped.Contains('&lt;script&gt;')) 'Summary markup was not escaped.'
 
 # Real capture and argument code, using a local child fixture; no Swift or network.
-$temporary = Join-Path ([System.IO.Path]::GetTempPath()) ('diagnostic-tests-' + [guid]::NewGuid())
+$temporary = Join-Path ([System.IO.Path]::GetTempPath()) ('diagnostic tests 中文 ' + [guid]::NewGuid())
 $previousSecret = $env:SOURCE_DIAGNOSTIC_JSON
 $previousRunnerTemp = $env:RUNNER_TEMP
 $previousSummary = $env:GITHUB_STEP_SUMMARY
@@ -155,12 +171,38 @@ try {
     Assert-True ($code -eq 2) 'Missing secret did not fail the entry script.'
     $saved = Get-Content (Join-Path $temporary 'source-diagnostic-public/report.json') -Raw | ConvertFrom-Json
     Assert-True ($saved.status -eq 'missingSecret') 'Missing secret summary was lost.'
+    # Simulate toolchain metadata without invoking Swift, then exercise publication.
+    $metadataPath = Join-Path $temporary 'source-diagnostic-public/environment.json'
+    [System.IO.File]::WriteAllText($metadataPath, '{"swiftVersion":"6.2","private":"private-metadata"}')
     $code = Invoke-DiagnosticProcess -Executable (Get-Command pwsh).Source -Arguments @(
         '-NoProfile', '-File', $entry, '-Publish'
     ) -Directory $temporary -Prefix 'publish' -TimeoutSeconds 30
     Assert-True ($code -eq 0) 'Safe report publication failed.'
     Assert-True ([System.IO.File]::ReadAllText($env:GITHUB_STEP_SUMMARY).Contains('missingSecret')) 'Step summary missing.'
+    $saved = Get-Content (Join-Path $temporary 'source-diagnostic-public/report.json') -Raw | ConvertFrom-Json
+    Assert-True ($saved.environment.swiftVersion -ceq '6.2') 'Published report lost actual Swift version.'
+    Assert-True ($saved.environment.platform -ceq $environment.platform) 'Published platform mismatch.'
+    Assert-True ([System.IO.File]::ReadAllText($env:GITHUB_STEP_SUMMARY) -notmatch 'private-') 'Environment metadata leaked.'
     Assert-True (-not (Test-Path (Join-Path $temporary 'source-diagnostic-private'))) 'Private directory retained.'
+
+    # Setup failure still publishes an infrastructure report and tolerates corrupt metadata.
+    Remove-Item -LiteralPath (Join-Path $temporary 'source-diagnostic-public/report.json')
+    [System.IO.File]::WriteAllText($metadataPath, '{"swiftVersion":"private-version"}')
+    $code = Invoke-DiagnosticProcess -Executable (Get-Command pwsh).Source -Arguments @(
+        '-NoProfile', '-File', $entry, '-Publish'
+    ) -Directory $temporary -Prefix 'infrastructure-publish' -TimeoutSeconds 30
+    Assert-True ($code -eq 1) 'Missing report became success.'
+    $saved = Get-Content (Join-Path $temporary 'source-diagnostic-public/report.json') -Raw | ConvertFrom-Json
+    Assert-True ($saved.status -ceq 'infrastructureFailed' -and $null -eq $saved.environment.swiftVersion) 'Unsafe setup failure metadata.'
+    Assert-True ([System.IO.File]::ReadAllText($env:GITHUB_STEP_SUMMARY) -notmatch 'private-') 'Invalid version leaked.'
+
+    $privatePath = Join-Path $temporary 'source-diagnostic-private'
+    [System.IO.Directory]::CreateDirectory($privatePath) | Out-Null
+    [System.IO.File]::WriteAllText((Join-Path $privatePath 'source.json'), 'private-fixture')
+    $code = Invoke-DiagnosticProcess -Executable (Get-Command pwsh).Source -Arguments @(
+        '-NoProfile', '-File', $entry, '-Cleanup'
+    ) -Directory $temporary -Prefix 'cleanup' -TimeoutSeconds 30
+    Assert-True ($code -eq 0 -and -not (Test-Path -LiteralPath $privatePath)) 'Fallback cleanup failed.'
 } finally {
     $env:SOURCE_DIAGNOSTIC_JSON = $previousSecret
     $env:RUNNER_TEMP = $previousRunnerTemp

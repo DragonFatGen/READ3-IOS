@@ -58,6 +58,10 @@ jobs:
         with:
           submodules: false
 
+      - name: Test diagnostic workflow helpers (offline)
+        shell: pwsh
+        run: ./Scripts/Tests/SourceDiagnostic.Tests.ps1
+
       # macOS runner already contains Xcode and its bundled Swift toolchain.
       # Testing with the Xcode toolchain is also closer to the actual iOS build.
       - name: Show Apple toolchain

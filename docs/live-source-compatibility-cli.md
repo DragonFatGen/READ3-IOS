@@ -90,8 +90,12 @@ content. Do not paste them into bug reports or CLI output.
 
 No local Swift installation is needed. The **Manual Source Diagnostic** workflow
 (`.github/workflows/source-diagnostic.yml`) uses `workflow_dispatch` only: no
-push, pull-request, or scheduled live runs. It uses the same Windows runner and
-Swift setup as Windows Core Tests, with read-only repository permissions.
+push, pull-request, or scheduled live runs. A single dispatch starts independent
+Windows (`windows-2022`, existing Swift 6.3.3 setup) and macOS (`macos-15`, runner
+Xcode Swift as in Core Tests) jobs, with read-only repository permissions.
+The matrix uses `fail-fast: false`: failure on either platform does not cancel
+the other. Both receive the same `SOURCE_DIAGNOSTIC_JSON` Secret and all five
+dispatch inputs, with unchanged defaults. Do not rotate the Secret during a run.
 
 1. In the repository, open **Settings → Secrets and variables → Actions → New
    repository secret**. Name it `SOURCE_DIAGNOSTIC_JSON` and paste the original
@@ -107,9 +111,43 @@ Swift setup as Windows Core Tests, with read-only repository permissions.
    be at least 1; indices must be nonnegative integers (at most 2147483647).
    Keywords must be nonblank, at most 200 characters, without control characters
    or a leading `--`. Blank/invalid inputs and a missing Secret fail explicitly.
-4. View the job's **Summary** and download **source-diagnostic-report** from
-   **Artifacts**. Artifacts expire after **3 days**. Only the sanitized JSON is
-   uploaded; the original source is never an artifact.
+4. Wait for both **Source diagnostic / Windows** and **Source diagnostic / macOS**.
+   View the platform-labelled **Summary** sections and download
+   **source-diagnostic-report-Windows** and **source-diagnostic-report-macOS**
+   from **Artifacts**. Each archive contains its own `report.json`; extract them
+   into separate directories. Artifacts expire after **3 days**. Only sanitized
+   JSON is uploaded; the original source is never an artifact.
+
+### Comparing the two reports
+
+Each report includes an `environment` object: `platform`, `architecture`,
+`toolchain` and the actual numeric `swiftVersion`, obtained with `swift --version`
+before the Secret is supplied. The check requires Swift 6.0 or newer (the package
+manifest minimum). Unknown version output fails setup without publishing raw
+output. A null version means setup/version verification was unavailable.
+macOS uses the runner's selected Xcode toolchain, which can change with runner
+image updates; it is not claimed to match Windows Swift 6.3.3. Both summaries
+explicitly flag this comparison limitation. Even matching release numbers do
+not imply identical compiler builds, Foundation implementations or architecture.
+
+Compare reports from the **same dispatch/commit** in this order:
+
+1. Check environment versions and architectures. Record differences alongside
+   the outcome; a different toolchain is a possible confounding factor.
+2. Check `status`, `completedStage`, `failureCategory` and `failureOperation`.
+   A setup/build failure is not a source or network diagnostic.
+3. Compare `requestFailureKind`, `networkErrorDomain`, `networkErrorCode`,
+   `httpStatusCode` and the fixed `requestFailureSummary`, followed by result
+   counts when available. Null HTTP status is not HTTP 0.
+
+The supplied evidence for run **34457502916** is `unknown`, `NSURLErrorDomain`,
+code `-1`, null HTTP status at the search request stage. It does not establish
+the root cause. Success on macOS and failure on Windows would narrow the
+investigation, but would not alone prove an OS bug: toolchains, runner networks,
+egress addresses, timing and changing site results can differ. Equal failures
+also do not establish a specific cause. The jobs use independent in-memory
+cookie sessions. This comparison does not change source parsing, certificate
+validation or retry policy.
 
 The runner builds the existing executable, then invokes it directly with an
 argument list, preserving separate stdout, stderr and exit status. Source JSON
@@ -123,7 +161,8 @@ are used, not persistent self-hosted machines.
 
 The public report contains only a fixed run status, boolean success, allowlisted
 business stages/categories, nonnegative counts, fixed explanations, and the
-optional structured request metadata described below.
+optional structured request metadata described below, plus validated platform
+and toolchain metadata. Raw Swift version output is not published.
 Book/author/chapter names and the CLI's free-form `errorMessage` are discarded.
 This intentionally sacrifices error detail: generic redaction cannot prove that
 URLs, query strings, credentials or arbitrary private variables are absent.
@@ -139,8 +178,14 @@ minutes, with a 10-minute CLI build limit and a 3-minute diagnostic limit.
 
 `Scripts/Tests/SourceDiagnostic.Tests.ps1` tests validation, stream/argument
 isolation, exit codes, schema filtering and summary escaping offline in the
-existing Windows Core Tests job. It uses synthetic text and a local PowerShell
-child process, never the Repository Secret, Swift execution or a website.
+Windows and macOS Core Tests jobs and both manual diagnostic jobs. It uses
+synthetic text and a local PowerShell child process, never the Repository
+Secret, Swift execution or a website.
+Tests also cover executable naming, Swift version filtering, paths with spaces
+and Unicode, setup-failure publication and explicit cleanup. Path construction
+uses `Join-Path` and .NET temporary directories; the CLI has an `.exe` suffix
+only on Windows. Both platforms use the same shell-free process argument list
+and private stdout/stderr capture.
 Existing XCTest tests continue to cover CLI and runtime business behavior.
 
 A successful report indicates only that the chain produced results during that
