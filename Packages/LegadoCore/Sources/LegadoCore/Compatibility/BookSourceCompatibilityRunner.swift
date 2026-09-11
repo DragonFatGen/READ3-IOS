@@ -40,6 +40,7 @@ public struct CompatibilityReport: Sendable, Equatable {
     public let importWarnings: [SourceImportWarning]
     public let migrations: [SourceMigration]
     public let searchResults: [BookSearchResult]
+    public let searchDiagnostic: SearchDiagnostic?
     public let selectedSearchResult: BookSearchResult?
     public let bookInfo: BookInfoResult?
     public let chapters: [BookChapterResult]
@@ -54,6 +55,7 @@ public struct CompatibilityReport: Sendable, Equatable {
         importWarnings: [SourceImportWarning] = [],
         migrations: [SourceMigration] = [],
         searchResults: [BookSearchResult] = [],
+        searchDiagnostic: SearchDiagnostic? = nil,
         selectedSearchResult: BookSearchResult? = nil,
         bookInfo: BookInfoResult? = nil,
         chapters: [BookChapterResult] = [],
@@ -65,6 +67,7 @@ public struct CompatibilityReport: Sendable, Equatable {
         self.importWarnings = importWarnings
         self.migrations = migrations
         self.searchResults = searchResults
+        self.searchDiagnostic = searchDiagnostic
         self.selectedSearchResult = selectedSearchResult
         self.bookInfo = bookInfo
         self.chapters = chapters
@@ -146,17 +149,23 @@ public struct BookSourceCompatibilityRunner: Sendable {
             migrations: imported.migrations
         )
         let searchResults: [BookSearchResult]
+        var searchDiagnostic = SearchDiagnostic()
         do {
             searchResults = try await searchRuntime.search(
                 source: source,
                 keyword: keyword,
-                page: searchPage
+                page: searchPage,
+                diagnostic: &searchDiagnostic
             )
         } catch {
-            return base.report(failure: failure(.search, error: error))
+            searchDiagnostic.requestedBookIndex = bookIndex
+            return base.with(searchDiagnostic: searchDiagnostic).report(failure: failure(.search, error: error))
         }
+        searchDiagnostic.lastStage = .resultSelection
+        searchDiagnostic.requestedBookIndex = bookIndex
+        searchDiagnostic.indexInRange = searchResults.indices.contains(bookIndex)
         guard searchResults.indices.contains(bookIndex) else {
-            return base.with(searchResults: searchResults).report(
+            return base.with(searchResults: searchResults, searchDiagnostic: searchDiagnostic).report(
                 failure: CompatibilityFailure(
                     stage: .search,
                     operation: .search,
@@ -165,7 +174,7 @@ public struct BookSourceCompatibilityRunner: Sendable {
             )
         }
         let selectedBook = searchResults[bookIndex]
-        let searched = base.with(searchResults: searchResults, selectedBook: selectedBook)
+        let searched = base.with(searchResults: searchResults, searchDiagnostic: searchDiagnostic, selectedBook: selectedBook)
 
         let info: BookInfoResult
         do {
@@ -395,6 +404,7 @@ private struct PartialReport {
     var warnings: [SourceImportWarning]
     var migrations: [SourceMigration]
     var searchResults: [BookSearchResult] = []
+    var searchDiagnostic: SearchDiagnostic?
     var selectedBook: BookSearchResult?
     var bookInfo: BookInfoResult?
     var chapters: [BookChapterResult] = []
@@ -403,6 +413,7 @@ private struct PartialReport {
 
     func with(
         searchResults: [BookSearchResult]? = nil,
+        searchDiagnostic: SearchDiagnostic? = nil,
         selectedBook: BookSearchResult? = nil,
         bookInfo: BookInfoResult? = nil,
         chapters: [BookChapterResult]? = nil,
@@ -411,6 +422,7 @@ private struct PartialReport {
     ) -> PartialReport {
         var copy = self
         if let searchResults { copy.searchResults = searchResults }
+        if let searchDiagnostic { copy.searchDiagnostic = searchDiagnostic }
         if let selectedBook { copy.selectedBook = selectedBook }
         if let bookInfo { copy.bookInfo = bookInfo }
         if let chapters { copy.chapters = chapters }
@@ -425,6 +437,7 @@ private struct PartialReport {
             importWarnings: warnings,
             migrations: migrations,
             searchResults: searchResults,
+            searchDiagnostic: searchDiagnostic,
             selectedSearchResult: selectedBook,
             bookInfo: bookInfo,
             chapters: chapters,

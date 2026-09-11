@@ -70,6 +70,14 @@ For example, a response-decoding failure during search is categorized as
 `charset` with operation `search`. Diagnostic messages are length-limited and
 redact common credential fields.
 
+`CompatibilityReport.searchDiagnostic` separately retains safe search boundary
+observations, including on thrown errors. See the [search diagnostic field
+reference](live-source-compatibility-cli.md#search-stage-diagnostics) for null
+count semantics, response metadata, advisory page hints and index validation.
+This instrumentation does not change Android-compatible parsing or filtering.
+The 速读谷 diagnostic candidate remains unverified by the Swift CLI; independent
+HTTP observations and old zero-count reports are not compatibility proof.
+
 ## Offline fixtures and test coverage
 
 The desensitized fixture under `TestSources/compatibility` contains a complete

@@ -27,12 +27,25 @@ public struct BookSourceSearchRuntime: Sendable {
         keyword: String,
         page: Int = 1
     ) async throws -> [BookSearchResult] {
+        var diagnostic = SearchDiagnostic()
+        return try await search(source: source, keyword: keyword, page: page, diagnostic: &diagnostic)
+    }
+
+    /// The diagnostic remains available when a stage throws; existing errors are unchanged.
+    public func search(
+        source: BookSource,
+        keyword: String,
+        page: Int = 1,
+        diagnostic: inout SearchDiagnostic
+    ) async throws -> [BookSearchResult] {
+        diagnostic = SearchDiagnostic()
         guard let searchURL = nonblank(source.searchUrl), let rules = source.ruleSearch,
               nonblank(rules.bookList) != nil else {
             throw BookSearchError.searchNotSupported
         }
         if requiresNetworkHost(searchURL) { throw BookSearchError.unsupportedJavaScriptNetworkHost }
 
+        diagnostic.lastStage = .requestBuild
         let built: RequestBuildResult
         do {
             built = try await requestBuilder.buildResult(
@@ -52,6 +65,7 @@ public struct BookSourceSearchRuntime: Sendable {
             )
         }
 
+        diagnostic.lastStage = .request
         let response: HTTPResponse
         do { response = try await httpClient.send(built.request) }
         catch {
@@ -60,17 +74,23 @@ public struct BookSourceSearchRuntime: Sendable {
             )
         }
 
+        diagnostic.recordResponse(response)
+        diagnostic.lastStage = .responseDecode
         let body: String
         do { body = try response.text(decoder: textDecoder) }
         catch { throw BookSearchError.responseDecodeFailed(error.localizedDescription) }
 
+        if diagnostic.responseContentType == .html {
+            diagnostic.pageHint = SearchPageHint.classify(body)
+        }
         do {
             return try bookListParser.parse(
                 body: body,
                 rules: rules,
                 source: source,
                 baseURL: response.finalURL.absoluteString,
-                variables: built.variableWrites
+                variables: built.variableWrites,
+                diagnostic: &diagnostic
             )
         } catch let error as BookListParseError {
             throw map(error)

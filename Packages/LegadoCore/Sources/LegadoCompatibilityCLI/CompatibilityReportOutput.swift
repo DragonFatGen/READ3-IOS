@@ -7,6 +7,7 @@ struct CompatibilityReportDTO: Codable, Equatable {
     let importWarningCount: Int
     let migrationCount: Int
     let searchResultCount: Int
+    let searchDiagnostic: SearchDiagnostic?
     let selectedBookName: String?
     let selectedBookAuthor: String?
     let chapterCount: Int
@@ -29,6 +30,7 @@ struct CompatibilityReportDTO: Codable, Equatable {
         importWarningCount = report.importWarnings.count
         migrationCount = report.migrations.count
         searchResultCount = report.searchResults.count
+        searchDiagnostic = report.searchDiagnostic
         self.selectedBookName = selectedBookName.map(BookSourceCompatibilityRunner.redacted)
         self.selectedBookAuthor = selectedBookAuthor.map(BookSourceCompatibilityRunner.redacted)
         chapterCount = report.chapters.count
@@ -41,7 +43,11 @@ struct CompatibilityReportDTO: Codable, Equatable {
         networkErrorDomain = report.failure?.requestDiagnostic?.errorDomain
         networkErrorCode = report.failure?.requestDiagnostic?.errorCode
         httpStatusCode = report.failure?.requestDiagnostic?.httpStatusCode
-        errorMessage = (report.failure?.message).map(BookSourceCompatibilityRunner.redacted)
+        if report.failure?.operation == .search {
+            errorMessage = "Search failed; underlying details <redacted>."
+        } else {
+            errorMessage = (report.failure?.message).map(BookSourceCompatibilityRunner.redacted)
+        }
     }
 
     static func inputFailure(_ message: String) -> CompatibilityReportDTO {
@@ -84,6 +90,7 @@ struct CompatibilityReportDTO: Codable, Equatable {
         self.importWarningCount = importWarningCount
         self.migrationCount = migrationCount
         self.searchResultCount = searchResultCount
+        searchDiagnostic = nil
         self.selectedBookName = selectedBookName
         self.selectedBookAuthor = selectedBookAuthor
         self.chapterCount = chapterCount

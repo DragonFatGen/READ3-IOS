@@ -244,6 +244,111 @@ No tests added for this change contact websites. Compilation and test execution
 must be verified by GitHub Actions for the new commit, not inferred from earlier
 successful builds.
 
+## Search-stage diagnostics
+
+`searchDiagnostic` is an optional, safe object in the CLI JSON and the sanitized
+PowerShell report/Step Summary. Old reports without it remain accepted and
+publish `searchDiagnostic: null`. New nested counts and booleans are explicitly
+null when their stage has not run or a complete measurement is unavailable.
+The runtime overload `search(source:keyword:page:diagnostic:)` updates an inout
+`SearchDiagnostic` even when it throws, without changing existing return values
+or error types. The runner carries it through later stages and adds selection
+metadata. It contains no source, rule, URL, header, body, title or error text.
+
+**The existing `searchResultCount` retains its historical meaning:** the length
+of the successfully returned array stored by the runner. A search exception
+leaves that array at its default empty value, so old `0` does not prove a measured
+zero. Use `searchDiagnostic.finalResultCount` to distinguish null (unfinished)
+from 0 (a completed parse returned no valid results). `completedStage` still
+describes the last completed business stage; successful parsing followed by
+selection failure still leaves it at `import`.
+
+| Nested field | Meaning |
+| --- | --- |
+| `lastStage` | Last entered boundary: `definition`, `requestBuild`, `request`, `responseDecode`, `bookList`, `fields`, `parsed`, `resultSelection` |
+| `lastField` | Last visited field: `name`, `author`, `kind`, `wordCount`, `lastChapter`, `intro`, `coverUrl`, `bookUrl`; null before fields |
+| `bookListMatchedCount` | Actual node collection size after successful bookList evaluation, before filtering; null if evaluation failed |
+| `missingNameCount` | Entries rejected for an empty formatted name after a complete field pass; null if that pass was interrupted |
+| `missingBookURLCount` | Entries with blank raw bookUrl extraction, before existing URL fallback; null if any node's bookUrl was skipped or field processing failed |
+| `filteredItemCount` | Entries removed by existing filtering during a complete parse (currently empty names only) |
+| `finalResultCount` | Complete returned result count; null on a thrown search error |
+| `ruleThrew` | Whether bookList/field rule processing threw (including syntax and unsupported capability checks); null before rule processing |
+| `ruleFailureCategory` | First observed rule error: `ruleParser`, `selector`, `javascript`, `unsupportedCapability`, `unknown`; null without a rule error |
+| `requestedBookIndex` | Requested zero-based book index, recorded when search is attempted |
+| `indexInRange` | Whether that index exists in the completed result array; null if parsing did not complete |
+| `responseStatusCode` | Status of the search response actually returned by the HTTP client, or null before a response exists |
+| `responseContentType` | Allowlisted MIME group: `html`, `json`, `text`, `xml`, `other`, `unknown`; parameters and raw header values are discarded |
+| `responseByteCount` | Size of the returned response Data, before text decoding; not wire/compressed size |
+| `responseRedirected` | Whether the returned response contains followed redirect hops; null without a response |
+| `pageHint` | Advisory `searchForm`, `bookDetail`, `loginOrVerification`, or `unknown`; `other` is reserved/accepted but currently not inferred |
+
+The existing top-level `httpStatusCode` remains **request failure metadata**.
+It is not repurposed for successful transfers. Search response metadata can
+therefore show status 200 while top-level network fields are null. Neither the
+status nor the page hint changes existing status handling or retries. Metadata
+describes the returned search response, not an entire request/redirect history.
+
+Read a failed report as follows:
+
+1. `definition` means no executable search definition or an already unsupported
+   search-URL capability. `requestBuild` and `request` identify construction and
+   transport failures; use the existing structured request fields for their
+   known causes. Counts remain null.
+2. `responseDecode` with a `charset` failure means the response arrived but
+   decoding failed. Response size/type/status survive, list counts remain null.
+3. `bookList` with `ruleThrew=true` identifies failed list parsing/evaluation.
+   A null match count is not a zero match.
+4. `fields` with a known match count identifies an interrupted field pass;
+   `lastField` shows the field being processed. Full-pass counts remain null.
+5. `resultSelection` with `bookListMatchedCount=0` means the list rule completed
+   with no matching nodes. Positive matches plus a zero final count and positive
+   `filteredItemCount` mean nodes were rejected during field extraction.
+6. Positive `finalResultCount` with `indexInRange=false` means results exist but
+   the requested index is outside them. `indexInRange=true` means selection
+   succeeded; subsequent failures belong to later business stages.
+
+Existing parser behavior is intentionally preserved: empty names filter only
+that entry; empty book URLs resolve to the response base URL and are **not**
+filtered. Fields after an empty name are not evaluated. Thus the missing-URL
+total is unknown when even one name-filtered node skipped its URL rule. A
+required-field rule exception aborts the search. Optional-field exceptions that
+the existing parser tolerates still return nil for that optional field; they
+now set `ruleThrew=true` without making the search fail. The first error category
+can therefore describe an earlier tolerated error, while `lastField` records
+the last field visited. Unknown error types stay `unknown`; classification does
+not inspect localized messages. Search failures in CLI `errorMessage` now use
+fixed text as well; PowerShell retains its existing fixed `errorSummary`.
+
+Page hints use a separate bounded HTML probe (at most 262,144 UTF-8 bytes, only
+when the normalized content type is HTML). A search form has an explicit search
+role or search input; a detail hint requires book Open Graph type/title metadata
+and an h1; a login hint requires password and username/email inputs in the same
+form. A URL containing `action=login` alone has no effect. Conflicting structural
+signals, unrecognized layouts, oversized/non-HTML pages and probe failures stay
+`unknown`. A shared login/search widget can resemble these signals: hints do
+not establish that login is required, that the page is correct, or that the
+source is compatible. The probe never changes rule execution.
+
+The supplied report for run **34567224481**, commit **f983a88**, has identical
+Windows/macOS `import` completion, `search` failure and legacy count 0, with
+empty network metadata. It lacks these new observations; it cannot identify
+the matching/filtering/selection boundary by itself. The current 速读谷 candidate
+has **not passed** the Swift CLI diagnostic. The independent observation that a
+full-title HTTP search returned a detail page does not prove Actions received
+the same page. No source-specific rule, parsing semantic, TLS or retry change
+is justified by this report alone.
+
+After pushing the new commit, first check Windows/macOS **Core Tests**, which
+compile the package and run XCTest plus the offline PowerShell tests. Then
+manually dispatch **Manual Source Diagnostic** on `main` using the existing
+Secret and the same public inputs: keyword `苟在两界修仙`, `search_page=1`,
+`book_index=0`, `chapter_index=0`, `maximum_page_count=5`. Compare both platform
+artifacts from that dispatch, starting with environment/toolchain metadata and
+then `searchDiagnostic`. Development does not read/change the Secret or trigger
+this live run. Offline tests use invented HTML, mock responses and injected
+errors, including direct detail results, zero-match forms, missing fields,
+rule failures, out-of-range selection, and rejection of sensitive report fields.
+
 ## Known limitations
 
 The command cannot make an unstable third-party site deterministic. WebView

@@ -4,6 +4,50 @@ import XCTest
 @testable import LegadoCore
 
 final class CompatibilityCLIApplicationTests: XCTestCase {
+    func testSearchDiagnosticSurvivesCLIJSONAndOldReportsRemainDecodable() async throws {
+        let file = try temporarySourceFile(data: try fixture("chinese-source.json"))
+        defer { try? FileManager.default.removeItem(at: file) }
+        let execution = await CompatibilityCLIApplication().run(
+            arguments: ["--source", file.path, "--keyword", "synthetic", "--book-index", "9", "--json"],
+            httpClient: MockHTTPClient(response: try response("search.html", url: "https://fixture.invalid/search"))
+        )
+        XCTAssertEqual(execution.exitCode, .compatibilityFailure)
+        let data = Data(execution.output.utf8)
+        let report = try JSONDecoder().decode(CompatibilityReportDTO.self, from: data)
+        XCTAssertEqual(report.searchDiagnostic?.lastStage, .resultSelection)
+        XCTAssertEqual(report.searchDiagnostic?.bookListMatchedCount, 1)
+        XCTAssertEqual(report.searchDiagnostic?.finalResultCount, report.searchResultCount)
+        XCTAssertEqual(report.searchDiagnostic?.requestedBookIndex, 9)
+        XCTAssertEqual(report.searchDiagnostic?.indexInRange, false)
+        XCTAssertEqual(report.completedStage, "import")
+        XCTAssertNil(report.httpStatusCode) // Existing field is only request-failure metadata.
+        XCTAssertEqual(report.searchDiagnostic?.responseStatusCode, 200)
+        XCTAssertFalse(execution.output.contains("https://"))
+        var old = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        old.removeValue(forKey: "searchDiagnostic")
+        let decoded = try JSONDecoder().decode(CompatibilityReportDTO.self,
+            from: JSONSerialization.data(withJSONObject: old))
+        XCTAssertNil(decoded.searchDiagnostic)
+    }
+
+    func testSearchRuleFailureCLIReplacesRawRuleAndErrorText() async throws {
+        var source = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture("chinese-source.json")) as? [String: Any])
+        source["ruleSearch"] = ["bookList": "@js:private-rule https://private.invalid/?query=private-value"]
+        let file = try temporarySourceFile(data: JSONSerialization.data(withJSONObject: source))
+        defer { try? FileManager.default.removeItem(at: file) }
+        let execution = await CompatibilityCLIApplication().run(
+            arguments: ["--source", file.path, "--keyword", "synthetic", "--json"],
+            httpClient: MockHTTPClient(response: try response("search.html", url: "https://fixture.invalid/search"))
+        )
+        let report = try JSONDecoder().decode(CompatibilityReportDTO.self, from: Data(execution.output.utf8))
+        XCTAssertEqual(report.searchDiagnostic?.lastStage, .bookList)
+        XCTAssertEqual(report.searchDiagnostic?.ruleThrew, true)
+        XCTAssertNil(report.searchDiagnostic?.finalResultCount)
+        XCTAssertFalse(execution.output.contains("private-"))
+        XCTAssertFalse(execution.output.contains("https://"))
+        XCTAssertEqual(report.errorMessage, "Search failed; underlying details <redacted>.")
+    }
+
     func testInvalidSourceShapeReturnsInputExitCodeWithoutRequests() async throws {
         let file = try temporarySourceFile(data: Data("[]".utf8))
         defer { try? FileManager.default.removeItem(at: file) }

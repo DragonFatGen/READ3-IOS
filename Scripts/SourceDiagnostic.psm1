@@ -71,6 +71,7 @@ function New-DiagnosticStatus {
         successful = $false
         completedStage = $null
         searchResultCount = $null
+        searchDiagnostic = $null
         chapterCount = $null
         contentCharacterCount = $null
         failureCategory = $null
@@ -82,6 +83,52 @@ function New-DiagnosticStatus {
         requestFailureSummary = $null
         errorSummary = $messages[$Status]
     }
+}
+
+function ConvertTo-PublicSearchDiagnostic {
+    param($Raw)
+    if ($null -eq $Raw) { return $null } # Old reports remain valid.
+    if ($Raw -isnot [System.Collections.IDictionary]) { throw 'schema' }
+    $safe = [ordered]@{}
+    $enums = @{
+        lastStage = @('definition', 'requestBuild', 'request', 'responseDecode', 'bookList', 'fields', 'parsed', 'resultSelection')
+        lastField = @('name', 'author', 'kind', 'wordCount', 'lastChapter', 'intro', 'coverUrl', 'bookUrl')
+        ruleFailureCategory = @('ruleParser', 'selector', 'javascript', 'unsupportedCapability', 'unknown')
+        responseContentType = @('html', 'json', 'text', 'xml', 'other', 'unknown')
+        pageHint = @('searchForm', 'bookDetail', 'loginOrVerification', 'other', 'unknown')
+    }
+    foreach ($field in @('lastStage', 'lastField', 'ruleFailureCategory', 'responseContentType', 'pageHint')) {
+        $value = $Raw[$field]
+        if ($null -ne $value -and ($value -isnot [string] -or $value -cnotin $enums[$field])) { throw 'schema' }
+        $safe[$field] = $value
+    }
+    foreach ($field in @('bookListMatchedCount', 'missingNameCount', 'missingBookURLCount',
+        'filteredItemCount', 'finalResultCount', 'requestedBookIndex', 'responseStatusCode', 'responseByteCount')) {
+        $value = $Raw[$field]
+        if ($null -ne $value) {
+            if ($value -isnot [int] -and $value -isnot [long]) { throw 'schema' }
+            if ($field -ne 'requestedBookIndex' -and $value -lt 0) { throw 'schema' }
+            if ($field -eq 'responseStatusCode' -and ($value -lt 100 -or $value -gt 599)) { throw 'schema' }
+        }
+        $safe[$field] = $value
+    }
+    foreach ($field in @('ruleThrew', 'indexInRange', 'responseRedirected')) {
+        $value = $Raw[$field]
+        if ($null -ne $value -and $value -isnot [bool]) { throw 'schema' }
+        $safe[$field] = $value
+    }
+    if ($null -eq $safe.lastStage -or $null -eq $safe.pageHint) { throw 'schema' }
+    if (($safe.ruleThrew -eq $true) -ne ($null -ne $safe.ruleFailureCategory)) { throw 'schema' }
+    foreach ($field in @('missingNameCount', 'missingBookURLCount', 'filteredItemCount', 'finalResultCount')) {
+        if ($null -ne $safe[$field] -and ($null -eq $safe.bookListMatchedCount -or
+            $safe[$field] -gt $safe.bookListMatchedCount)) { throw 'schema' }
+    }
+    if ($null -ne $safe.indexInRange) {
+        if ($null -eq $safe.requestedBookIndex -or $null -eq $safe.finalResultCount) { throw 'schema' }
+        $expected = $safe.requestedBookIndex -ge 0 -and $safe.requestedBookIndex -lt $safe.finalResultCount
+        if ($safe.indexInRange -ne $expected) { throw 'schema' }
+    }
+    return $safe # Never copy arbitrary keys, rules, headers, body or error text.
 }
 
 function ConvertTo-PublicDiagnostic {
@@ -109,6 +156,9 @@ function ConvertTo-PublicDiagnostic {
             -not $raw['contentSucceeded'] -or $null -eq $raw['contentCharacterCount'] -or
             $null -ne $raw['failureCategory'] -or $null -ne $raw['failureOperation'])) { throw 'schema' }
         if (-not $raw['successful'] -and $null -eq $raw['failureCategory']) { throw 'schema' }
+        $searchDiagnostic = ConvertTo-PublicSearchDiagnostic $raw['searchDiagnostic']
+        if ($null -ne $searchDiagnostic -and $null -ne $searchDiagnostic.finalResultCount -and
+            $searchDiagnostic.finalResultCount -ne $raw['searchResultCount']) { throw 'schema' }
 
         $requestMessages = @{
             requestConstruction = 'Request URL or options could not be constructed.'
@@ -157,6 +207,7 @@ function ConvertTo-PublicDiagnostic {
             successful = $raw['successful']
             completedStage = $raw['completedStage']
             searchResultCount = $raw['searchResultCount']
+            searchDiagnostic = $searchDiagnostic
             chapterCount = $raw['chapterCount']
             contentCharacterCount = $raw['contentCharacterCount']
             failureCategory = $raw['failureCategory']

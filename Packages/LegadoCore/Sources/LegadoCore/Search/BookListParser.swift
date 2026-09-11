@@ -28,10 +28,28 @@ struct BookListParser: Sendable {
         baseURL: String,
         variables: [String: String] = [:]
     ) throws -> [BookSearchResult] {
+        var diagnostic = SearchDiagnostic()
+        return try parse(body: body, rules: rules, source: source, baseURL: baseURL,
+                         variables: variables, diagnostic: &diagnostic)
+    }
+
+    func parse(
+        body: String,
+        rules: any BookListRuleDefinition,
+        source: BookSource,
+        baseURL: String,
+        variables: [String: String],
+        diagnostic: inout SearchDiagnostic
+    ) throws -> [BookSearchResult] {
+        diagnostic.lastStage = .bookList
+        diagnostic.ruleThrew = false
         guard var listRule = nonblank(rules.bookList) else { return [] }
         let reverse = listRule.hasPrefix("-")
         if reverse || listRule.hasPrefix("+") { listRule.removeFirst() }
-        if requiresNetworkHost(listRule) { throw BookListParseError.unsupportedJavaScriptNetworkHost }
+        if requiresNetworkHost(listRule) {
+            diagnostic.recordRuleError(BookListParseError.unsupportedJavaScriptNetworkHost)
+            throw BookListParseError.unsupportedJavaScriptNetworkHost
+        }
 
         let expression: RuleExpression
         do {
@@ -40,6 +58,7 @@ struct BookListParser: Sendable {
                 context: RuleParseContext(contentIsJSON: Self.looksLikeJSON(body))
             )
         } catch {
+            diagnostic.recordRuleError(error)
             throw BookListParseError.bookListRuleFailed(error.localizedDescription)
         }
 
@@ -55,24 +74,40 @@ struct BookListParser: Sendable {
                 context: &context
             )
         } catch let error as RuleExecutionError {
+            diagnostic.recordRuleError(error)
             if case .unsupportedExecutionNode = error {
                 throw BookListParseError.unsupportedStructuredRule(listRule)
             }
             throw BookListParseError.bookListRuleFailed(error.localizedDescription)
         } catch {
+            diagnostic.recordRuleError(error)
             throw BookListParseError.bookListRuleFailed(error.localizedDescription)
         }
 
         let nodes = reverse ? Array(collection.nodes.reversed()) : collection.nodes
-        return try nodes.compactMap {
-            try parseItem(
-                $0,
+        diagnostic.bookListMatchedCount = nodes.count
+        diagnostic.lastStage = .fields
+        var results: [BookSearchResult] = []
+        var emptyBookURLs = 0
+        for node in nodes {
+            if let item = try parseItem(
+                node,
                 rules: rules,
                 source: source,
                 baseURL: baseURL,
-                variables: variables
-            )
+                variables: variables,
+                emptyBookURLs: &emptyBookURLs,
+                diagnostic: &diagnostic
+            ) { results.append(item) }
         }
+        // Publish complete-pass counts only. A thrown field rule leaves them nil.
+        diagnostic.missingNameCount = nodes.count - results.count
+        diagnostic.filteredItemCount = nodes.count - results.count
+        // Name-filtered nodes never execute bookUrl; do not re-run rules for diagnostics.
+        diagnostic.missingBookURLCount = nodes.count == results.count ? emptyBookURLs : nil
+        diagnostic.finalResultCount = results.count
+        diagnostic.lastStage = .parsed
+        return results
     }
 
     private func parseItem(
@@ -80,25 +115,28 @@ struct BookListParser: Sendable {
         rules: any BookListRuleDefinition,
         source: BookSource,
         baseURL: String,
-        variables: [String: String]
+        variables: [String: String],
+        emptyBookURLs: inout Int,
+        diagnostic: inout SearchDiagnostic
     ) throws -> BookSearchResult? {
         var context = makeContext(source: source, baseURL: baseURL, variables: variables)
         let input = RuleExecutionInput(node: node)
 
-        let name = formatName(try requiredField("name", rule: rules.name, input: input, context: &context))
+        let name = formatName(try requiredField("name", rule: rules.name, input: input, context: &context, diagnostic: &diagnostic))
         guard !name.isEmpty else { return nil }
-        let author = formatAuthor(try requiredField("author", rule: rules.author, input: input, context: &context))
-        let kind = try optionalField("kind", rule: rules.kind, input: input, context: &context, join: ",")
+        let author = formatAuthor(try requiredField("author", rule: rules.author, input: input, context: &context, diagnostic: &diagnostic))
+        let kind = try optionalField("kind", rule: rules.kind, input: input, context: &context, diagnostic: &diagnostic, join: ",")
         let wordCount = formatWordCount(try optionalField(
-            "wordCount", rule: rules.wordCount, input: input, context: &context
+            "wordCount", rule: rules.wordCount, input: input, context: &context, diagnostic: &diagnostic
         ))
         let lastChapter = try optionalField(
-            "lastChapter", rule: rules.lastChapter, input: input, context: &context
+            "lastChapter", rule: rules.lastChapter, input: input, context: &context, diagnostic: &diagnostic
         )
-        let intro = formatIntro(try optionalField("intro", rule: rules.intro, input: input, context: &context))
-        let coverRaw = try optionalField("coverUrl", rule: rules.coverUrl, input: input, context: &context)
+        let intro = formatIntro(try optionalField("intro", rule: rules.intro, input: input, context: &context, diagnostic: &diagnostic))
+        let coverRaw = try optionalField("coverUrl", rule: rules.coverUrl, input: input, context: &context, diagnostic: &diagnostic)
         let coverURL = nonblank(coverRaw).map { urlResolver.resolve($0, against: baseURL) }
-        let rawBookURL = try requiredField("bookUrl", rule: rules.bookUrl, input: input, context: &context)
+        let rawBookURL = try requiredField("bookUrl", rule: rules.bookUrl, input: input, context: &context, diagnostic: &diagnostic)
+        if nonblank(rawBookURL) == nil { emptyBookURLs += 1 }
         let bookURL = urlResolver.resolve(rawBookURL, against: baseURL)
 
         return BookSearchResult(
@@ -121,13 +159,22 @@ struct BookListParser: Sendable {
         _ field: String,
         rule: String?,
         input: RuleExecutionInput,
-        context: inout RuleExecutionContext
+        context: inout RuleExecutionContext,
+        diagnostic: inout SearchDiagnostic
     ) throws -> String {
+        diagnostic.lastField = SearchDiagnostic.Field(rawValue: field)
         guard let rule = nonblank(rule) else { return "" }
-        if requiresNetworkHost(rule) { throw BookListParseError.unsupportedJavaScriptNetworkHost }
+        if requiresNetworkHost(rule) {
+            diagnostic.recordRuleError(BookListParseError.unsupportedJavaScriptNetworkHost)
+            throw BookListParseError.unsupportedJavaScriptNetworkHost
+        }
         do { return try executeField(rule, input: input, context: &context).stringValue }
-        catch let error as BookListParseError { throw error }
+        catch let error as BookListParseError {
+            diagnostic.recordRuleError(error)
+            throw error
+        }
         catch {
+            diagnostic.recordRuleError(error)
             throw BookListParseError.fieldRuleFailed(field: field, message: error.localizedDescription)
         }
     }
@@ -137,16 +184,23 @@ struct BookListParser: Sendable {
         rule: String?,
         input: RuleExecutionInput,
         context: inout RuleExecutionContext,
+        diagnostic: inout SearchDiagnostic,
         join: String = "\n"
     ) throws -> String? {
+        diagnostic.lastField = SearchDiagnostic.Field(rawValue: field)
         guard let rule = nonblank(rule) else { return nil }
-        if requiresNetworkHost(rule) { throw BookListParseError.unsupportedJavaScriptNetworkHost }
+        if requiresNetworkHost(rule) {
+            diagnostic.recordRuleError(BookListParseError.unsupportedJavaScriptNetworkHost)
+            throw BookListParseError.unsupportedJavaScriptNetworkHost
+        }
         do {
             return try executeField(rule, input: input, context: &context)
                 .stringValues.joined(separator: join)
         } catch let error as BookListParseError {
+            diagnostic.recordRuleError(error)
             throw error
         } catch {
+            diagnostic.recordRuleError(error)
             return nil
         }
     }

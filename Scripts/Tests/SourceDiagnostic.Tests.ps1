@@ -73,6 +73,55 @@ Assert-True ($report.status -eq 'diagnosticFailed' -and $report.completedStage -
 Assert-True ((Get-DiagnosticExitCode 1 $report) -eq 1) 'Compatibility failure hidden.'
 $public = ($report | ConvertTo-Json) + (ConvertTo-DiagnosticSummary $report)
 Assert-True ($public -notmatch 'private-|https://|Authorization|Cookie|<script>') 'Sensitive error text leaked.'
+Assert-True ($null -eq $report.searchDiagnostic) 'Old report acquired invented search observations.'
+$searchSample = $failure | ConvertFrom-Json -AsHashtable
+$searchSample.searchDiagnostic = @{
+    lastStage = 'resultSelection'; lastField = 'bookUrl'
+    bookListMatchedCount = 1; missingNameCount = 0; missingBookURLCount = 0
+    filteredItemCount = 0; finalResultCount = 1; ruleThrew = $false; ruleFailureCategory = $null
+    requestedBookIndex = 0; indexInRange = $true; responseStatusCode = 200
+    responseContentType = 'html'; responseByteCount = 321; responseRedirected = $true; pageHint = 'bookDetail'
+    rule = 'private-rule'; responseBody = '<html>private-body</html>'
+    url = 'https://private.invalid/?key=private-key'; Cookie = 'private-cookie'; errorMessage = 'private-error'
+}
+$safeSearch = ConvertTo-PublicDiagnostic ($searchSample | ConvertTo-Json -Depth 4) 1
+Assert-True ($safeSearch.status -ceq 'diagnosticFailed') 'New search report rejected.'
+foreach ($field in @('lastStage', 'lastField', 'bookListMatchedCount', 'missingNameCount', 'missingBookURLCount',
+    'filteredItemCount', 'finalResultCount', 'ruleThrew', 'ruleFailureCategory', 'requestedBookIndex',
+    'indexInRange', 'responseStatusCode', 'responseContentType', 'responseByteCount', 'responseRedirected', 'pageHint')) {
+    Assert-True ($safeSearch.searchDiagnostic[$field] -ceq $searchSample.searchDiagnostic[$field]) "Lost search field: $field"
+}
+$public = ($safeSearch | ConvertTo-Json -Depth 4) + (ConvertTo-DiagnosticSummary $safeSearch)
+Assert-True ($public -notmatch 'private-|https://|Cookie|<html>') 'Search metadata leaked sensitive data.'
+Assert-True ($public.Contains('bookListMatchedCount') -and $public.Contains('responseByteCount')) 'Summary lost search data.'
+foreach ($case in @(
+    @('lastStage', 'private-stage'), @('lastField', 'private-rule'), @('pageHint', 'private-page'),
+    @('responseContentType', 'text/html; private-token'), @('responseStatusCode', 600),
+    @('bookListMatchedCount', '1'), @('missingNameCount', -1), @('finalResultCount', 1.5),
+    @('responseByteCount', $true), @('ruleThrew', 'false'), @('responseRedirected', 'true'),
+    @('ruleFailureCategory', 'private-error'), @('indexInRange', $false)
+)) {
+    $invalid = $searchSample.Clone()
+    $invalid.searchDiagnostic = $searchSample.searchDiagnostic.Clone()
+    $invalid.searchDiagnostic[$case[0]] = $case[1]
+    $rejected = ConvertTo-PublicDiagnostic ($invalid | ConvertTo-Json -Depth 4) 1
+    Assert-True ($rejected.status -ceq 'invalidReport') 'Invalid search metadata accepted.'
+    Assert-True ((($rejected | ConvertTo-Json -Depth 4) + (ConvertTo-DiagnosticSummary $rejected)) -notmatch 'private-') 'Invalid metadata leaked.'
+}
+$interrupted = $searchSample.Clone()
+$interrupted.searchResultCount = 0
+$interrupted.failureOperation = 'search'
+$interrupted.failureCategory = 'selector'
+$interrupted.searchDiagnostic = @{
+    lastStage = 'fields'; lastField = 'name'; pageHint = 'unknown'
+    bookListMatchedCount = 3; finalResultCount = $null; missingNameCount = $null
+    missingBookURLCount = $null; filteredItemCount = $null; requestedBookIndex = 0; indexInRange = $null
+    ruleThrew = $true; ruleFailureCategory = 'unknown'
+}
+$safeSearch = ConvertTo-PublicDiagnostic ($interrupted | ConvertTo-Json -Depth 4) 1
+Assert-True ($safeSearch.status -ceq 'diagnosticFailed' -and $safeSearch.searchDiagnostic.bookListMatchedCount -eq 3) 'Interrupted search lost observations.'
+Assert-True ($null -eq $safeSearch.searchDiagnostic.finalResultCount -and $null -eq $safeSearch.searchDiagnostic.indexInRange) 'Unknown search counts became zero or false.'
+Assert-True ($safeSearch.searchDiagnostic.ruleFailureCategory -ceq 'unknown') 'Unknown error acquired an invented cause.'
 Assert-True ($report.errorSummary -eq 'Request construction or network execution failed.') 'Unsafe error summary.'
 foreach ($field in @('requestFailureKind', 'networkErrorDomain', 'networkErrorCode', 'httpStatusCode', 'requestFailureSummary')) {
     Assert-True ($null -eq $report[$field]) 'Old report must leave new diagnostics empty.'
