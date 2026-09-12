@@ -94,10 +94,11 @@ final class SearchDiagnosticTests: XCTestCase {
 
     func testRequiredFieldFailureKeepsListCountButLeavesFinalCountsUnknown() async throws {
         var source = source()
-        source.ruleSearch?.name = "@js:private-rule"
+        source.ruleSearch?.name = "tag.h1@text<js>private-rule</js>"
+        let javaScript = DiagnosticThrowingJavaScript()
         let report = await BookSourceCompatibilityRunner(
             httpClient: MockHTTPClient(response: response(detail)),
-            javaScriptExecutor: DiagnosticThrowingJavaScript()
+            javaScriptExecutor: javaScript
         ).run(sourceJSON: try JSONEncoder().encode(source), keyword: "x")
         let diagnostic = try XCTUnwrap(report.searchDiagnostic)
         XCTAssertEqual(diagnostic.lastStage, .fields)
@@ -109,20 +110,24 @@ final class SearchDiagnosticTests: XCTestCase {
         XCTAssertNil(diagnostic.missingNameCount)
         XCTAssertNil(diagnostic.filteredItemCount)
         XCTAssertNil(diagnostic.indexInRange)
+        XCTAssertEqual(javaScript.executionCount, 1)
     }
 
     func testOptionalRuleErrorRemainsNonfatalAndIsObserved() async throws {
         var source = source()
-        source.ruleSearch?.intro = "@js:private-rule"
+        source.ruleSearch?.intro = "tag.h1@text<js>private-rule</js>"
         var diagnostic = SearchDiagnostic()
+        let javaScript = DiagnosticThrowingJavaScript()
         let books = try await BookSourceSearchRuntime(
             httpClient: MockHTTPClient(response: response(detail)),
-            javaScriptExecutor: DiagnosticThrowingJavaScript()
+            javaScriptExecutor: javaScript
         ).search(source: source, keyword: "x", diagnostic: &diagnostic)
         XCTAssertEqual(books.count, 1)
         XCTAssertNil(books.first?.intro)
         XCTAssertEqual(diagnostic.ruleThrew, true)
+        XCTAssertEqual(diagnostic.ruleFailureCategory, .unknown)
         XCTAssertEqual(diagnostic.finalResultCount, 1)
+        XCTAssertEqual(javaScript.executionCount, 1)
     }
 
     func testNonemptyResultIndexOutOfRangeDoesNotFetchBookInfo() async throws {
@@ -211,8 +216,14 @@ final class SearchDiagnosticTests: XCTestCase {
 }
 
 private struct DiagnosticPrivateError: Error {}
-private struct DiagnosticThrowingJavaScript: RuleJavaScriptExecutor {
+private final class DiagnosticThrowingJavaScript: RuleJavaScriptExecutor, @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    var executionCount: Int { lock.withLock { count } }
+
     func execute(script: String, context: JavaScriptExecutionContext) throws -> JavaScriptExecutionResult {
+        lock.withLock { count += 1 }
         throw DiagnosticPrivateError()
     }
 }
