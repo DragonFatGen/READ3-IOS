@@ -332,8 +332,11 @@ source is compatible. The probe never changes rule execution.
 The supplied report for run **34567224481**, commit **f983a88**, has identical
 Windows/macOS `import` completion, `search` failure and legacy count 0, with
 empty network metadata. It lacks these new observations; it cannot identify
-the matching/filtering/selection boundary by itself. The current 速读谷 candidate
-has **not passed** the Swift CLI diagnostic. The independent observation that a
+the matching/filtering/selection boundary by itself. At that time the 速读谷 candidate
+had **not passed** the Swift CLI diagnostic. That status is superseded by
+[run 34732999741 and its scoped results](real-source-compatibility.md#confirmed-single-source-live-result):
+both main platform diagnostics completed content with standard JSON options;
+Windows curl comparison remains unresolved. The independent observation that a
 full-title HTTP search returned a detail page does not prove Actions received
 the same page. No source-specific rule, parsing semantic, TLS or retry change
 is justified by this report alone.

@@ -75,8 +75,41 @@ observations, including on thrown errors. See the [search diagnostic field
 reference](live-source-compatibility-cli.md#search-stage-diagnostics) for null
 count semantics, response metadata, advisory page hints and index validation.
 This instrumentation does not change Android-compatible parsing or filtering.
-The 速读谷 diagnostic candidate remains unverified by the Swift CLI; independent
-HTTP observations and old zero-count reports are not compatibility proof.
+The latest supplied Swift CLI evidence is recorded below; independent HTTP
+observations and old zero-count reports are not compatibility proof.
+
+## Confirmed single-source live result
+
+User-confirmed evidence: [Actions run 34732999741](https://github.com/DragonFatGen/READ3-IOS/actions/runs/34732999741),
+running commit `1e873bb1f6a15426a874ca89689b33d198992ae0`.
+This record transcribes the supplied results; this closeout did not rerun the
+diagnostic, inspect Secrets, or retrieve the private source definition.
+
+| Observation | Windows | macOS |
+| --- | --- | --- |
+| Swift version | 6.3.3 | 6.1.2 |
+| successful / completedStage | true / content | true / content |
+| Search results | 1 book | 1 book |
+| TOC count | 743 chapters | 743 chapters |
+| Selected content | 3021 characters | 3021 characters |
+| Search method / form body size | POST / 100 bytes | POST / 100 bytes |
+| formEncoded / searchkeyMatchesKeyword | true / true | true / true |
+| Auxiliary curl comparison | comparisonFailed; no exit code obtained | succeeded |
+
+The source used single-quoted request options in its earlier failing search URL.
+The standard JSON decoder rejected them and compatible mode silently returned
+empty options, producing GET without the body. After the options were changed
+to standard double-quoted JSON, the main diagnostic succeeded on both platforms.
+This does **not** demonstrate single-quoted option support. The fail-closed fix
+documented in [the request engine](http-request-engine.md#url-option-syntax) is
+subsequent work and still needs cloud compilation and regression execution.
+
+Only one source, one book and the selected chapter were validated. A 743-entry
+TOC does not mean all 743 chapter bodies were fetched or passed. This result
+does not establish whole-site, all-chapter or all-source compatibility, nor an
+iOS/Xcode build result. Windows curl `comparisonFailed` remains an unresolved
+auxiliary diagnostic TODO; this round adds no diagnostic mechanism for it.
+No Secret, full source JSON, or downloaded book content is included here.
 
 ## Offline fixtures and test coverage
 

@@ -348,17 +348,18 @@ public struct RequestBuilder: Sendable {
         policy: RuleParseContext.ErrorPolicy
     ) throws -> RequestOptions {
         guard let text else { return RequestOptions() }
+        let json: JSONValue
         do {
-            let json = try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
-            guard case let .object(values) = json else { throw HTTPError.invalidRequestOptions(text) }
-            return try requestOptions(values, policy: policy)
-        } catch let error as HTTPError {
-            if policy == .strict { throw error }
-            return RequestOptions()
+            json = try JSONDecoder().decode(JSONValue.self, from: Data(text.utf8))
         } catch {
-            if policy == .strict { throw HTTPError.invalidRequestOptions(text) }
-            return RequestOptions()
+            // Ignoring a recognized option block can turn POST into GET and lose
+            // its body. Fail in both policies without retaining untrusted input.
+            throw HTTPError.invalidRequestOptions("Expected a valid JSON object.")
         }
+        guard case let .object(values) = json else {
+            throw HTTPError.invalidRequestOptions("Expected a valid JSON object.")
+        }
+        return try requestOptions(values, policy: policy)
     }
 
     private func requestOptions(

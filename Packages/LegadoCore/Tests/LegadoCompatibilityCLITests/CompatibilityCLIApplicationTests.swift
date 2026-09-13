@@ -4,6 +4,38 @@ import XCTest
 @testable import LegadoCore
 
 final class CompatibilityCLIApplicationTests: XCTestCase {
+    func testInvalidOptionsStopBeforeNetworkAndKeepBothPublicFormatsPrivate() async throws {
+        for options in [
+            #"{'method':'POST','body':'private-body','headers':{'Authorization':'private-token'}}"#,
+            #"{"method":"POST","body":"private-body","headers":{"Cookie":"private-cookie"}"#
+        ] {
+            var source = try XCTUnwrap(JSONSerialization.jsonObject(with: fixture("chinese-source.json")) as? [String: Any])
+            source["searchUrl"] = "https://private.invalid/private-path," + options
+            let file = try temporarySourceFile(data: JSONSerialization.data(withJSONObject: source))
+            defer { try? FileManager.default.removeItem(at: file) }
+            for format in [[], ["--json"]] {
+                let client = MockHTTPClient(error: .transportError("must not execute"))
+                let execution = await CompatibilityCLIApplication().run(
+                    arguments: ["--source", file.path, "--keyword", "中文"] + format,
+                    httpClient: client
+                )
+                XCTAssertEqual(execution.exitCode, .compatibilityFailure)
+                let requests = await client.requests
+                XCTAssertTrue(requests.isEmpty)
+                XCTAssertFalse(execution.output.contains("private"))
+                XCTAssertFalse(execution.output.contains(options))
+                XCTAssertFalse(execution.output.contains("https://"))
+                if !format.isEmpty {
+                    let report = try JSONDecoder().decode(CompatibilityReportDTO.self, from: Data(execution.output.utf8))
+                    XCTAssertEqual(report.failureCategory, "request")
+                    XCTAssertEqual(report.failureOperation, "search")
+                    XCTAssertEqual(report.searchDiagnostic?.lastStage, .requestBuild)
+                    XCTAssertEqual(report.completedStage, "import")
+                }
+            }
+        }
+    }
+
     func testSearchDiagnosticSurvivesCLIJSONAndOldReportsRemainDecodable() async throws {
         let file = try temporarySourceFile(data: try fixture("chinese-source.json"))
         defer { try? FileManager.default.removeItem(at: file) }

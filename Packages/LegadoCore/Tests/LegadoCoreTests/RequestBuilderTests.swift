@@ -129,14 +129,58 @@ final class RequestBuilderTests: XCTestCase {
     }
 
     func testMalformedOptionsCompatibleAndStrict() async throws {
-        let malformed = "https://example.invalid,{bad}"
-        let compatible = try await RequestBuilder().build(malformed)
-        XCTAssertEqual(compatible.url.absoluteString, "https://example.invalid")
-        await XCTAssertThrowsErrorAsync {
-            _ = try await RequestBuilder().build(
-                malformed,
-                context: RequestBuildContext(errorPolicy: .strict)
+        let options = [
+            "{bad}",
+            #"{'method':'POST','body':'searchkey={{key}}'}"#,
+            #"{"method":"POST","body":"private-body","headers":{"Authorization":"private-token"}"#,
+            #"{"method":"POST"} trailing"#,
+            #"{"body":"unterminated}"#
+        ]
+        for policy in [RuleParseContext.ErrorPolicy.strict, .legadoCompatible] {
+            for option in options {
+                await XCTAssertThrowsErrorAsync {
+                    _ = try await RequestBuilder().build(
+                        "https://private.invalid/private-path, " + option,
+                        context: RequestBuildContext(keyword: "中文", errorPolicy: policy)
+                    )
+                } verify: {
+                    XCTAssertEqual($0 as? HTTPError, .invalidRequestOptions("Expected a valid JSON object."))
+                    XCTAssertEqual($0.localizedDescription, "Invalid request options: expected a valid JSON object.")
+                    XCTAssertFalse(String(describing: $0).contains("private-"))
+                }
+            }
+        }
+    }
+
+    func testJSONPOSTPreservesChineseTemplateInBothPolicies() async throws {
+        for policy in [RuleParseContext.ErrorPolicy.strict, .legadoCompatible] {
+            let request = try await RequestBuilder().build(
+                #"https://example.invalid/search,{"method":"POST","body":"searchkey={{key}}"}"#,
+                context: RequestBuildContext(keyword: "中文", errorPolicy: policy)
             )
+            XCTAssertEqual(request.method, .post)
+            XCTAssertEqual(request.options.body, "searchkey=中文")
+            XCTAssertEqual(request.bodyKind, .form)
+            XCTAssertEqual(request.body, Data("searchkey=%E4%B8%AD%E6%96%87".utf8))
+        }
+    }
+
+    func testJSONStringsPreserveApostrophesEscapedQuotesAndCommas() async throws {
+        for policy in [RuleParseContext.ErrorPolicy.strict, .legadoCompatible] {
+            let request = try await RequestBuilder().build(
+                #"https://example.invalid/a,b,{"method":"POST","headers":{"Content-Type":"text/plain"},"body":"O'Reilly, \"quoted\", {literal}, \\path"}"#,
+                context: RequestBuildContext(errorPolicy: policy)
+            )
+            XCTAssertEqual(request.method, .post)
+            XCTAssertEqual(request.url.absoluteString, "https://example.invalid/a,b")
+            XCTAssertEqual(request.body, Data(#"O'Reilly, "quoted", {literal}, \path"#.utf8))
+            let plain = try await RequestBuilder().build(
+                "https://example.invalid/a,b",
+                context: RequestBuildContext(errorPolicy: policy)
+            )
+            XCTAssertEqual(plain.method, .get)
+            XCTAssertNil(plain.body)
+            XCTAssertEqual(plain.url.absoluteString, "https://example.invalid/a,b")
         }
     }
 

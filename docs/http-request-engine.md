@@ -52,9 +52,40 @@ Legacy source migration converts `@Header:{...}`, `|charset=...`, old
 `url@body` POST syntax, `searchKey`, and `searchPage` into the modern URL plus
 JSON-option representation before request analysis.
 
-Malformed option JSON is ignored by Android's nullable Gson result. The Swift
-builder mirrors that in compatible mode and exposes `invalidRequestOptions` in
-strict mode.
+Android `AnalyzeUrl.kt` calls `GSON.fromJsonObject<UrlOption>(...).getOrNull()`;
+`utils/GsonExtensions.kt` wraps Gson `fromJson` in `runCatching`. This is a Gson
+configuration path, not JavaScript evaluation. Its nullable failure permits
+Android to ignore malformed options. Gson-style single-quoted options are a
+compatibility gap in the current Swift standard-JSON decoder.
+
+READ3-IOS now deliberately rejects a recognized option block that cannot decode
+as a JSON object in **both** `.legadoCompatible` and `.strict` modes. It throws
+`HTTPError.invalidRequestOptions` with a fixed reason and fixed localized
+description; neither contains the original options, URL, body, or credentials.
+The block is never replaced with empty options: doing so could silently turn
+POST into GET and discard its body. An ordinary URL without an option block
+still defaults to GET. Valid option field handling, including existing
+policy-specific header and unsupported-method behavior, is unchanged.
+
+Single-quoted option support remains deferred, not declared incompatible with
+the project's compatibility goal. Level 2 includes request option objects, but
+does not define a complete permissive JSON grammar. There is no existing Core
+JSON5/Gson-compatible configuration parser; the rule scanner is not an object
+decoder. Within this round's static-only verification constraint, we retain the
+standard JSON boundary and explicitly fail on single quotes rather than add an
+unverified permissive parser. No global quote replacement or arbitrary JavaScript
+evaluation is used to parse configuration. Supporting that grammar later requires
+bounded parsing and its own deterministic coverage. This is an intentional
+difference from Android's nullable fallback, not a relaxation of compatibility
+requirements to make tests pass.
+
+Regression cases in `RequestBuilderTests` cover both policies, standard JSON
+POST with a Chinese keyword, rejected single quotes and malformed blocks,
+apostrophes, escaped quotes/backslashes and commas inside JSON strings, and
+ordinary GET URLs. `CompatibilityCLIApplicationTests` uses only synthetic options
+and mock HTTP to verify request-stage failure before any send and redaction in
+both public report formats. Existing Search, Explore, BookInfo, TOC and Content
+callers propagate construction errors before their HTTP send boundary.
 
 ## Request construction
 

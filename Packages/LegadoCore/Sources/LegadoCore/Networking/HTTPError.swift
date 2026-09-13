@@ -19,7 +19,7 @@ extension HTTPError: LocalizedError {
     public var errorDescription: String? {
         switch self {
         case let .invalidURL(value): "Invalid URL: \(value)"
-        case let .invalidRequestOptions(value): "Invalid request options: \(value)"
+        case .invalidRequestOptions: "Invalid request options: expected a valid JSON object."
         case let .invalidHeaders(field): "Invalid HTTP headers in \(field)."
         case let .unsupportedMethod(method): "Unsupported HTTP method: \(method)"
         case let .transportError(message): "HTTP transport failed: \(message)"
