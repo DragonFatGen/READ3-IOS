@@ -4,6 +4,105 @@ import XCTest
 
 @MainActor
 final class ReaderViewModelTests: XCTestCase {
+    func testReloadFailureRetainsContentAndProgressAndCanRetry() async {
+        let store = MemoryProgressStore()
+        let service = ReloadFailingContentService()
+        let model = makeModel(service: service, store: store)
+        defer { model.cancel() }
+        model.loadInitialChapter()
+        await waitUntil { model.content != nil }
+        model.updateProgress(0.6)
+        model.reloadCurrentChapter()
+        await waitUntil { model.errorMessage != nil }
+        XCTAssertNotNil(model.content)
+        XCTAssertEqual(model.chapterProgress, 0.6)
+        model.retry()
+        await waitUntil { !model.isLoading }
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(model.chapterProgress, 0.6)
+        let reloadCount = await service.reloadCount
+        XCTAssertEqual(reloadCount, 2)
+    }
+
+    func testLateResultIgnoringCancellationCannotReplaceNewChapterOrProgress() async {
+        let service = SuspendedChapterService()
+        let store = MemoryProgressStore()
+        let model = makeModel(service: service, store: store)
+        defer { model.cancel() }
+        model.loadInitialChapter()
+        for _ in 0..<200 {
+            if await service.isPending { break }
+            await Task.yield()
+        }
+        let pending = await service.isPending
+        XCTAssertTrue(pending)
+        model.goToChapter(at: 2)
+        await waitUntil { model.content?.chapterURL == testChapter(index: 2).url }
+        model.updateProgress(0.4)
+        model.saveProgressNow()
+        await service.complete()
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertEqual(model.currentChapterIndex, 2)
+        XCTAssertEqual(model.content?.chapterURL, testChapter(index: 2).url)
+        XCTAssertEqual(store.value?.lastChapterIndex, 2)
+        XCTAssertEqual(store.value?.chapterProgress, 0.4)
+    }
+
+    func testReusedIndexDoesNotRestoreAnotherChaptersPosition() {
+        let store = MemoryProgressStore()
+        store.value = ReadingProgress(lastChapterURL: "https://source.example/removed-chapter",
+            lastChapterName: "旧章", lastChapterIndex: 1, chapterProgress: 0.8,
+            chapterCount: 3, lastReadAt: Date())
+        let model = makeModel(initialIndex: 1, service: RecordingContentService(), store: store)
+        XCTAssertEqual(model.chapterProgress, 0)
+        XCTAssertNil(model.consumeRestorationProgress())
+        store.value?.lastChapterURL = ""
+        let legacy = makeModel(initialIndex: 1, service: RecordingContentService(), store: store)
+        XCTAssertEqual(legacy.consumeRestorationProgress(), 0.8)
+    }
+
+    func testVolumeHeadingsAreSkippedDuringStartNavigationAndPreload() async {
+        let service = RecordingContentService()
+        let store = MemoryProgressStore()
+        let heading = BookChapterResult(name: "卷一", url: "volume-one", isVolume: true,
+            index: 0, bookURL: testBookInfo().bookURL, sourceURL: testSource().bookSourceUrl)
+        let middleHeading = BookChapterResult(name: "卷二", url: "volume-two", isVolume: true,
+            index: 2, bookURL: testBookInfo().bookURL, sourceURL: testSource().bookSourceUrl)
+        let model = ReaderViewModel(source: testSource(), book: testBookInfo(), libraryBookID: "book",
+            chapters: [heading, testChapter(index: 1), middleHeading, testChapter(index: 3)],
+            initialChapterIndex: 0, contentService: service, progressStore: store)
+        defer { model.cancel() }
+        XCTAssertEqual(model.currentChapterIndex, 1)
+        XCTAssertFalse(model.previousChapterAvailable)
+        model.loadInitialChapter()
+        await waitUntil { model.content != nil }
+        model.goToChapter(at: 2)
+        XCTAssertEqual(model.currentChapterIndex, 1)
+        model.goToNextChapter()
+        await waitUntil { model.content?.content == "正文 3" }
+        XCTAssertFalse(model.nextChapterAvailable)
+        model.goToPreviousChapter()
+        await waitUntil { model.content?.content == "正文 1" }
+        let requested = await service.requestedIndices
+        XCTAssertFalse(requested.contains(0))
+        XCTAssertFalse(requested.contains(2))
+    }
+
+    func testFailedChapterDoesNotReplaceSavedReadingPositionOnExit() async {
+        let store = MemoryProgressStore()
+        let progress = ReadingProgress(lastChapterURL: testChapter().url,
+            lastChapterName: testChapter().name, lastChapterIndex: 0, chapterProgress: 0.6,
+            chapterCount: 3, lastReadAt: Date())
+        store.value = progress
+        let model = makeModel(initialIndex: 1,
+            service: FakeContentService(result: .failure(.expected)), store: store)
+        model.loadInitialChapter()
+        await waitUntil { model.errorMessage != nil }
+        model.cancel()
+        XCTAssertEqual(store.value, progress)
+        XCTAssertTrue(store.history.isEmpty)
+    }
+
     func testInitialChapterLoadAndNavigationBoundaries() async {
         let service = RecordingContentService()
         let store = MemoryProgressStore()
@@ -60,6 +159,9 @@ final class ReaderViewModelTests: XCTestCase {
         )
         let model = makeModel(initialIndex: 1, service: RecordingContentService(), store: store)
         XCTAssertEqual(model.consumeRestorationProgress(), 0.42)
+        XCTAssertNil(model.consumeRestorationProgress())
+        model.loadInitialChapter()
+        await waitUntil { model.content != nil }
         model.updateProgress(0.7)
         model.saveProgressNow()
         XCTAssertEqual(store.value?.chapterProgress, 0.7)
@@ -68,10 +170,12 @@ final class ReaderViewModelTests: XCTestCase {
     func testChapterSwitchSavesOldChapterProgress() async {
         let store = MemoryProgressStore()
         let model = makeModel(service: RecordingContentService(), store: store)
+        model.loadInitialChapter()
+        await waitUntil { model.content != nil }
         model.updateProgress(0.6)
         model.goToNextChapter()
-        XCTAssertEqual(store.history.first?.lastChapterIndex, 0)
-        XCTAssertEqual(store.history.first?.chapterProgress, 0.6)
+        XCTAssertEqual(store.history.last?.lastChapterIndex, 0)
+        XCTAssertEqual(store.history.last?.chapterProgress, 0.6)
     }
 
     func testCancellationIsNotAnError() async {
@@ -79,6 +183,7 @@ final class ReaderViewModelTests: XCTestCase {
         let model = makeModel(service: service, store: MemoryProgressStore())
         model.loadInitialChapter()
         model.cancel()
+        XCTAssertFalse(model.isLoading)
         await Task.yield()
         XCTAssertNil(model.errorMessage)
     }
@@ -518,6 +623,38 @@ final class ReaderViewModelTests: XCTestCase {
             try? await Task.sleep(for: .milliseconds(2))
         }
         XCTFail("Timed out waiting for ReaderViewModel state")
+    }
+}
+
+private actor SuspendedChapterService: ChapterContentLoading {
+    private var continuation: CheckedContinuation<ChapterContentResult, Never>?
+    private var suspendedOnce = false
+    var isPending: Bool { continuation != nil }
+
+    func loadContent(source: BookSource, book: BookInfoResult, chapter: BookChapterResult,
+                     policy: ContentLoadPolicy) async throws -> ChapterContentResult {
+        if chapter.index == 0, !suspendedOnce {
+            suspendedOnce = true
+            return await withCheckedContinuation { continuation = $0 }
+        }
+        return ChapterContentResult(content: "合成测试章", chapterURL: chapter.url)
+    }
+
+    func complete() {
+        continuation?.resume(returning: ChapterContentResult(content: "旧结果", chapterURL: testChapter().url))
+        continuation = nil
+    }
+}
+
+private actor ReloadFailingContentService: ChapterContentLoading {
+    private(set) var reloadCount = 0
+    func loadContent(source: BookSource, book: BookInfoResult, chapter: BookChapterResult,
+                     policy: ContentLoadPolicy) async throws -> ChapterContentResult {
+        if policy == .reloadIgnoringCache {
+            reloadCount += 1
+            if reloadCount == 1 { throw ViewModelTestError.expected }
+        }
+        return ChapterContentResult(content: "合成测试正文", chapterURL: chapter.url)
     }
 }
 

@@ -31,6 +31,8 @@ swift test --package-path Packages/LegadoCore
 ```
 
 iOS 应用由 macOS CI 使用 Xcode 构建。Windows 上的 Swift 测试不能替代 Xcode 构建验证。
+应用启动前提、离线测试范围及手动阅读流程验收步骤见
+[`docs/architecture.md`](docs/architecture.md#ios-阅读流程检查与验收)。
 
 克隆仓库后初始化 Android 参考子模块：
 

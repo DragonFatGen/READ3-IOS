@@ -4,6 +4,25 @@ import XCTest
 
 @MainActor
 final class LibraryRepositoryTests: XCTestCase {
+    func testAddingPreviouslyReadBookAdoptsPersistedProgress() throws {
+        let suite = "PreviouslyReadBook.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let first = LibraryRepository(defaults: defaults)
+        let bookID = LibraryBook.identifier(sourceURL: testSource().bookSourceUrl, bookURL: testBookInfo().bookURL)
+        let progress = ReadingProgress(lastChapterURL: testChapter(index: 1).url,
+            lastChapterName: "测试章", lastChapterIndex: 1, chapterProgress: 0.45,
+            chapterCount: 3, lastReadAt: Date(timeIntervalSince1970: 1234))
+        first.saveProgress(progress, for: bookID)
+        let restored = LibraryRepository(defaults: defaults)
+        restored.add(source: testSource(), bookInfo: testBookInfo())
+        restored.add(source: testSource(), bookInfo: testBookInfo())
+        XCTAssertEqual(restored.books.count, 1)
+        XCTAssertEqual(restored.books.first?.progress, progress)
+        XCTAssertEqual(restored.books.first?.lastReadAt, progress.lastReadAt)
+        XCTAssertEqual(LibraryRepository(defaults: defaults).books.first?.progress, progress)
+    }
+
     func testCorruptedPersistenceLoadsEmptyLibrary() {
         let suite = "LibraryRepositoryCorrupted.\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!

@@ -39,12 +39,16 @@ final class TOCViewModelTests: XCTestCase {
         let viewModel = TOCViewModel(
             source: testSource(),
             book: testBookInfo(),
-            service: FakeTOCService(result: .failure(.expected))
+            service: RetryingMetadataService()
         )
 
         await viewModel.loadIfNeeded()
 
         XCTAssertFalse(viewModel.hasLoaded)
         XCTAssertNotNil(viewModel.errorMessage)
+        await viewModel.retry()
+        XCTAssertNil(viewModel.errorMessage)
+        XCTAssertTrue(viewModel.hasLoaded)
+        XCTAssertEqual(viewModel.chapters, [testChapter()])
     }
 }

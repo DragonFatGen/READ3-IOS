@@ -69,5 +69,7 @@ final class SearchViewModel: ObservableObject {
 
     func cancelSearch() {
         searchTask?.cancel()
+        requestID = nil
+        isLoading = false
     }
 }

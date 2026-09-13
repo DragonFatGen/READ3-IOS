@@ -23,7 +23,10 @@ final class LibraryRepository: ObservableObject, ReadingProgressStoring {
     }
 
     func add(source: BookSource, bookInfo: BookInfoResult) {
-        let value = LibraryBook(source: source, bookInfo: bookInfo)
+        var value = LibraryBook(source: source, bookInfo: bookInfo)
+        // Reading from the detail/TOC route is allowed before adding to the shelf.
+        value.progress = progressByBookID[value.id]
+        value.lastReadAt = value.progress?.lastReadAt
         if let index = books.firstIndex(where: { $0.id == value.id }) {
             var refreshed = value
             refreshed.addedAt = books[index].addedAt

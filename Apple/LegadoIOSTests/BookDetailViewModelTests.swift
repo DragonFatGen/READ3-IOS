@@ -25,7 +25,7 @@ final class BookDetailViewModelTests: XCTestCase {
         let viewModel = BookDetailViewModel(
             source: testSource(),
             searchResult: testSearchResult(),
-            service: FakeBookInfoService(result: .failure(.expected))
+            service: RetryingMetadataService()
         )
 
         await viewModel.loadIfNeeded()
@@ -33,5 +33,8 @@ final class BookDetailViewModelTests: XCTestCase {
         XCTAssertNil(viewModel.bookInfo)
         XCTAssertFalse(viewModel.isLoading)
         XCTAssertNotNil(viewModel.errorMessage)
+        await viewModel.retry()
+        XCTAssertNil(viewModel.errorMessage)
+        XCTAssertEqual(viewModel.bookInfo, testBookInfo())
     }
 }

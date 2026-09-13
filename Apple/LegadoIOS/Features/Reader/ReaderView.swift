@@ -64,6 +64,18 @@ struct ReaderView: View {
                 ZStack {
                     settingsStore.settings.theme.backgroundColor.ignoresSafeArea()
                     readerContent(proxy: proxy, viewport: viewport)
+                    // Reload keeps existing content/position, but its failure
+                    // must remain visible instead of being hidden by that content.
+                    if viewModel.content != nil {
+                        if viewModel.isLoading {
+                            loadingView
+                                .padding()
+                                .background(settingsStore.settings.theme.backgroundColor)
+                        } else if let message = viewModel.errorMessage {
+                            errorView(message)
+                                .background(settingsStore.settings.theme.backgroundColor)
+                        }
+                    }
                     if controlsVisible { controlsOverlay(viewport: viewport) }
                     if pendingTextSelection != nil { selectionActionsOverlay(viewport: viewport) }
                 }
@@ -133,8 +145,9 @@ struct ReaderView: View {
                 .onChange(of: settingsStore.settings.layoutMode) { mode in
                     viewModel.setLayoutMode(mode)
                 }
-                .onChange(of: viewModel.content) { _ in
+                .onChange(of: viewModel.content) { content in
                     pendingTextSelection = nil
+                    if content == nil { scrollMetrics = .zero }
                     guard viewModel.layoutMode == .scroll else { return }
                     restoreScrollPosition(proxy)
                 }
@@ -143,6 +156,10 @@ struct ReaderView: View {
                 }
                 .onChange(of: scrollMetrics) { metrics in
                     guard viewModel.layoutMode == .scroll, viewModel.content != nil else { return }
+                    if viewModel.restorationProgress != nil {
+                        restoreScrollPosition(proxy)
+                        return
+                    }
                     viewModel.updateProgress(metrics.progress)
                 }
                 .onChange(of: viewModel.chapterProgress) { progress in
@@ -221,10 +238,10 @@ struct ReaderView: View {
                         onSelectionChanged: { pendingTextSelection = $0 }
                     )
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .overlay { restorationAnchors }
                 }
                 .padding(.horizontal, CGFloat(settingsStore.settings.horizontalPadding))
                 .padding(.vertical, ReaderLayoutMetrics.pageVerticalPadding)
+                .overlay { restorationAnchors }
                 .background(contentMetricsReader)
                 .contentShape(Rectangle())
                 .simultaneousGesture(TapGesture().onEnded {
@@ -418,17 +435,15 @@ struct ReaderView: View {
     }
 
     private func restoreScrollPosition(_ proxy: ScrollViewProxy) {
-        guard viewModel.layoutMode == .scroll, viewModel.content != nil else { return }
-        let progress = viewModel.consumeRestorationProgress() ?? 0
+        guard viewModel.layoutMode == .scroll, viewModel.content != nil,
+              scrollMetrics.contentHeight > 0, scrollMetrics.viewportHeight > 0 else { return }
+        // Content changes and onAppear may both arrive for the same load.
+        // A consumed restoration must not issue a second jump to the top.
+        guard let progress = viewModel.consumeRestorationProgress() else { return }
         var transaction = Transaction()
         transaction.disablesAnimations = true
         withTransaction(transaction) {
-            proxy.scrollTo(
-                progress > 0
-                    ? "reader-progress-\(Int((progress * 100).rounded()))"
-                    : "reader-top",
-                anchor: .top
-            )
+            proxy.scrollTo("reader-progress-\(Int((progress * 100).rounded()))", anchor: .top)
         }
     }
 
@@ -438,7 +453,11 @@ struct ReaderView: View {
                 ForEach(0...100, id: \.self) { value in
                     Color.clear
                         .frame(width: 1, height: 1)
-                        .offset(y: geometry.size.height * CGFloat(value) / 100)
+                        .offset(y: ReaderScrollMetrics(
+                            offset: 0,
+                            contentHeight: geometry.size.height,
+                            viewportHeight: scrollMetrics.viewportHeight
+                        ).offset(forProgress: Double(value) / 100))
                         .id("reader-progress-\(value)")
                 }
             }
@@ -498,7 +517,7 @@ private struct ReaderContentMetrics: Equatable {
     var height: CGFloat
 }
 
-private struct ReaderScrollMetrics: Equatable {
+struct ReaderScrollMetrics: Equatable {
     var offset: CGFloat
     var contentHeight: CGFloat
     var viewportHeight: CGFloat
@@ -508,6 +527,12 @@ private struct ReaderScrollMetrics: Equatable {
     var progress: Double {
         let distance = max(contentHeight - viewportHeight, 1)
         return min(max(Double(offset / distance), 0), 1)
+    }
+
+    func offset(forProgress progress: Double) -> CGFloat {
+        // Save and restore against the same scrollable extent, including the
+        // chapter heading/padding but excluding the visible viewport.
+        max(contentHeight - viewportHeight, 0) * CGFloat(min(max(progress, 0), 1))
     }
 }
 

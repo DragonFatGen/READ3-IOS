@@ -6,6 +6,27 @@ enum ViewModelTestError: Error, Sendable {
     case expected
 }
 
+actor RetryingMetadataService: BookInfoLoading, TOCLoading {
+    private var infoFailed = false
+    private var tocFailed = false
+
+    func loadBookInfo(source: BookSource, book: BookSearchResult) async throws -> BookInfoResult {
+        if !infoFailed {
+            infoFailed = true
+            throw ViewModelTestError.expected
+        }
+        return testBookInfo()
+    }
+
+    func loadTOC(source: BookSource, book: BookInfoResult) async throws -> [BookChapterResult] {
+        if !tocFailed {
+            tocFailed = true
+            throw ViewModelTestError.expected
+        }
+        return [testChapter()]
+    }
+}
+
 func testSource() -> BookSource {
     BookSource(bookSourceUrl: "https://source.example", bookSourceName: "测试书源")
 }

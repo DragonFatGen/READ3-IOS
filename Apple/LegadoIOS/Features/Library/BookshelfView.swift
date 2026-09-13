@@ -216,7 +216,7 @@ private struct ContinueReadingView: View {
 
     var body: some View {
         Group {
-            if viewModel.hasLoaded, !viewModel.chapters.isEmpty {
+            if viewModel.hasLoaded, viewModel.chapters.contains(where: { !$0.isVolume }) {
                 ReaderView(
                     source: book.source,
                     book: book.bookInfo,
@@ -236,14 +236,16 @@ private struct ContinueReadingView: View {
             } else if let message = viewModel.errorMessage {
                 StatusView(title: "无法恢复阅读", message: message) { Task { await viewModel.retry() } }
             } else if viewModel.hasLoaded {
-                StatusView(title: "目录为空", message: "该书源没有返回章节")
+                StatusView(title: "目录为空", message: "该书源没有返回可阅读章节") {
+                    Task { await viewModel.retry() }
+                }
             }
         }
         .task { await viewModel.loadIfNeeded() }
     }
 
     private var initialIndex: Int {
-        guard let progress = book.progress else { return 0 }
+        guard let progress = dependencies.libraryRepository.progress(for: book.id) else { return 0 }
         if let exact = viewModel.chapters.firstIndex(where: { $0.url == progress.lastChapterURL }) {
             return exact
         }

@@ -38,6 +38,7 @@ final class ReaderViewModel: ObservableObject {
     private var paginationConfiguration: PaginationConfiguration?
     private var chapterEntryPosition: ChapterEntryPosition = .restore
     private var pendingAnnotationJump: ReaderAnnotation?
+    private var retryPolicy: ContentLoadPolicy = .cacheFirst
 
     init(
         source: BookSource,
@@ -63,6 +64,11 @@ final class ReaderViewModel: ObservableObject {
         self.paginator = paginator
         self.layoutMode = layoutMode
         currentChapterIndex = min(max(initialChapterIndex, 0), max(chapters.count - 1, 0))
+        if chapters[safe: currentChapterIndex]?.isVolume == true {
+            currentChapterIndex = chapters.indices.first {
+                $0 >= currentChapterIndex && !chapters[$0].isVolume
+            } ?? chapters.indices.last { !chapters[$0].isVolume } ?? currentChapterIndex
+        }
         if let saved = progressStore.progress(for: libraryBookID),
            Self.matches(saved, chapter: chapters[safe: currentChapterIndex]) {
             chapterProgress = saved.normalizedChapterProgress
@@ -81,8 +87,14 @@ final class ReaderViewModel: ObservableObject {
 
     var currentChapter: BookChapterResult? { chapters[safe: currentChapterIndex] }
     var libraryBookIdentity: String { libraryBookID }
-    var previousChapterAvailable: Bool { currentChapterIndex > 0 }
-    var nextChapterAvailable: Bool { currentChapterIndex + 1 < chapters.count }
+    private var previousChapterIndex: Int? {
+        chapters.indices.last { $0 < currentChapterIndex && !chapters[$0].isVolume }
+    }
+    private var nextChapterIndex: Int? {
+        chapters.indices.first { $0 > currentChapterIndex && !chapters[$0].isVolume }
+    }
+    var previousChapterAvailable: Bool { previousChapterIndex != nil }
+    var nextChapterAvailable: Bool { nextChapterIndex != nil }
     var currentNormalizedProgress: Double { chapterProgress }
     var isCurrentPositionBookmarked: Bool { matchingCurrentBookmark() != nil }
     var currentChapterAnnotations: [ReaderAnnotation] {
@@ -102,7 +114,7 @@ final class ReaderViewModel: ObservableObject {
         loadCurrentChapter()
     }
 
-    func retry() { loadCurrentChapter() }
+    func retry() { loadCurrentChapter(policy: retryPolicy) }
 
     func reloadCurrentChapter() { loadCurrentChapter(policy: .reloadIgnoringCache) }
 
@@ -130,19 +142,19 @@ final class ReaderViewModel: ObservableObject {
     }
 
     func goToPreviousChapter() {
-        guard previousChapterAvailable else { return }
+        guard let index = previousChapterIndex else { return }
         speechController?.readerWillNavigate(self)
-        switchChapter(to: currentChapterIndex - 1, entryPosition: .start)
+        switchChapter(to: index, entryPosition: .start)
     }
 
     func goToNextChapter() {
-        guard nextChapterAvailable else { return }
+        guard let index = nextChapterIndex else { return }
         speechController?.readerWillNavigate(self)
-        switchChapter(to: currentChapterIndex + 1, entryPosition: .start)
+        switchChapter(to: index, entryPosition: .start)
     }
 
     func goToChapter(at index: Int) {
-        guard chapters.indices.contains(index) else { return }
+        guard chapters.indices.contains(index), !chapters[index].isVolume else { return }
         guard index != currentChapterIndex else { return }
         speechController?.readerWillNavigate(self)
         switchChapter(to: index, entryPosition: .start)
@@ -158,9 +170,9 @@ final class ReaderViewModel: ObservableObject {
         guard layoutMode == .paged, !pages.isEmpty else { return }
         if currentPageIndex < pages.count - 1 {
             selectPage(currentPageIndex + 1)
-        } else if nextChapterAvailable {
+        } else if let index = nextChapterIndex {
             speechController?.readerWillNavigate(self)
-            switchChapter(to: currentChapterIndex + 1, entryPosition: .start)
+            switchChapter(to: index, entryPosition: .start)
         }
     }
 
@@ -168,9 +180,9 @@ final class ReaderViewModel: ObservableObject {
         guard layoutMode == .paged, !pages.isEmpty else { return }
         if currentPageIndex > 0 {
             selectPage(currentPageIndex - 1)
-        } else if previousChapterAvailable {
+        } else if let index = previousChapterIndex {
             speechController?.readerWillNavigate(self)
-            switchChapter(to: currentChapterIndex - 1, entryPosition: .end)
+            switchChapter(to: index, entryPosition: .end)
         }
     }
 
@@ -253,6 +265,10 @@ final class ReaderViewModel: ObservableObject {
         loadTask?.cancel()
         preloadTask?.cancel()
         paginationTask?.cancel()
+        requestID = UUID()
+        paginationID = UUID()
+        isLoading = false
+        isPaginating = false
         if shouldPersistProgress { saveProgressNow() }
         else { saveTask?.cancel() }
     }
@@ -334,8 +350,8 @@ final class ReaderViewModel: ObservableObject {
     }
 
     func advanceChapterForSpeech() {
-        guard nextChapterAvailable else { return }
-        switchChapter(to: currentChapterIndex + 1, entryPosition: .start)
+        guard let index = nextChapterIndex else { return }
+        switchChapter(to: index, entryPosition: .start)
     }
 
     func synchronizeToSpeech(chapterIndex: Int, normalizedProgress: Double) {
@@ -391,7 +407,8 @@ final class ReaderViewModel: ObservableObject {
     }
 
     private func loadCurrentChapter(policy: ContentLoadPolicy = .cacheFirst) {
-        guard let chapter = currentChapter else { return }
+        guard let chapter = currentChapter, !chapter.isVolume else { return }
+        retryPolicy = policy
         loadTask?.cancel()
         let id = UUID()
         requestID = id
@@ -415,7 +432,7 @@ final class ReaderViewModel: ObservableObject {
                 self.applyPendingAnnotationJumpIfNeeded()
                 self.isLoading = false
                 self.persistProgress()
-                self.preloadAdjacentChapters(around: self.currentChapterIndex)
+                self.preloadAdjacentChapters()
                 if self.layoutMode == .paged {
                     self.requestPagination(entryPosition: self.chapterEntryPosition)
                 }
@@ -483,9 +500,11 @@ final class ReaderViewModel: ObservableObject {
         scheduleProgressSave()
     }
 
-    private func preloadAdjacentChapters(around index: Int) {
+    private func preloadAdjacentChapters() {
         preloadTask?.cancel()
-        let candidates = [index + 1, index - 1].compactMap { chapters[safe: $0] }
+        let candidates = [nextChapterIndex, previousChapterIndex].compactMap {
+            $0.flatMap { chapters[safe: $0] }
+        }
         guard !candidates.isEmpty else { return }
         let source = source
         let book = book
@@ -514,7 +533,9 @@ final class ReaderViewModel: ObservableObject {
     }
 
     private func persistProgress() {
-        guard let chapter = currentChapter else { return }
+        // A failed or cancelled chapter selection has not become a reading
+        // position. Keep the last successfully loaded chapter on the shelf.
+        guard content != nil, let chapter = currentChapter, !chapter.isVolume else { return }
         progressStore?.saveProgress(
             ReadingProgress(
                 lastChapterURL: chapter.url,
@@ -605,7 +626,9 @@ final class ReaderViewModel: ObservableObject {
 
     private static func matches(_ progress: ReadingProgress, chapter: BookChapterResult?) -> Bool {
         guard let chapter else { return false }
-        return progress.lastChapterURL == chapter.url || progress.lastChapterIndex == chapter.index
+        // An index can be reused by a different chapter after a TOC update.
+        if !progress.lastChapterURL.isEmpty { return progress.lastChapterURL == chapter.url }
+        return progress.lastChapterIndex == chapter.index
     }
 }
 
