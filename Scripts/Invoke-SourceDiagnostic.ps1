@@ -2,6 +2,7 @@ param([switch]$Publish, [switch]$Cleanup, [switch]$CheckToolchain)
 
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'SourceDiagnostic.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'CurlDiagnostic.psm1') -Force
 if ([string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) { throw 'RUNNER_TEMP is required.' }
 $runnerDirectory = [System.IO.Path]::TrimEndingDirectorySeparator([System.IO.Path]::GetFullPath($env:RUNNER_TEMP))
 $privateDirectory = Join-Path $runnerDirectory 'source-diagnostic-private'
@@ -121,20 +122,31 @@ try {
     [System.IO.File]::WriteAllText($sourcePath, $sourceJSON, $utf8)
     $sourceJSON = $null
     $report = New-DiagnosticStatus executionFailed
-    $cliCode = Invoke-DiagnosticProcess -Executable $executable -Arguments @(
+    $cliArguments = @(
         '--source', $sourcePath, '--keyword', $options.keyword,
         '--search-page', [string]$options.search_page,
         '--book-index', [string]$options.book_index,
         '--chapter-index', [string]$options.chapter_index,
         '--maximum-page-count', [string]$options.maximum_page_count, '--json'
-    ) -Directory $privateDirectory -Prefix 'cli' -TimeoutSeconds 180
+    )
+    Remove-Item Env:DIAGNOSTIC_CAPTURE_DIRECTORY, Env:DIAGNOSTIC_REPLAY_DIRECTORY -ErrorAction SilentlyContinue
+    if ($env:DIAGNOSTIC_CURL_COMPARE -ceq 'true') { $env:DIAGNOSTIC_CAPTURE_DIRECTORY = $privateDirectory }
+    $cliCode = Invoke-DiagnosticProcess -Executable $executable -Arguments $cliArguments `
+        -Directory $privateDirectory -Prefix 'cli' -TimeoutSeconds 180
+    Remove-Item Env:DIAGNOSTIC_CAPTURE_DIRECTORY -ErrorAction SilentlyContinue
     $rawReport = [System.IO.File]::ReadAllText((Join-Path $privateDirectory 'cli.stdout'))
     $report = ConvertTo-PublicDiagnostic -RawJSON $rawReport -ExitCode $cliCode
     $exitCode = Get-DiagnosticExitCode -CLIExitCode $cliCode -Report $report
+    $report['curlComparison'] = $null
+    if ($env:DIAGNOSTIC_CURL_COMPARE -ceq 'true') {
+        $report['curlComparison'] = Invoke-CurlDiagnostic -Directory $privateDirectory -Keyword $options.keyword `
+            -Executable $executable -CLIArguments $cliArguments
+    }
 } catch {
     # Exception strings can contain source data, process arguments or raw output.
     # Retain only the fixed phase status; never print $_ or native stderr.
 } finally {
+    Remove-Item Env:DIAGNOSTIC_CAPTURE_DIRECTORY, Env:DIAGNOSTIC_REPLAY_DIRECTORY -ErrorAction SilentlyContinue
     $sourceJSON = $null
     try { Remove-PrivateDiagnosticFiles } catch {
         $exitCode = 1

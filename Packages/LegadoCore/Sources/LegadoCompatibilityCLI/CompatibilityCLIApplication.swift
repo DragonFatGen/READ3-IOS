@@ -16,7 +16,8 @@ struct CompatibilityCLIApplication {
     private let parser = CLIArgumentParser()
     private let renderer = CompatibilityReportRenderer()
 
-    func run(arguments: [String], httpClient: any HTTPClient) async -> CLIExecution {
+    func run(arguments: [String], httpClient: any HTTPClient,
+             captureDirectory: URL? = nil, replayDirectory: URL? = nil) async -> CLIExecution {
         let parsed: CLIArgumentResult
         do {
             parsed = try parser.parse(arguments)
@@ -41,8 +42,34 @@ struct CompatibilityCLIApplication {
             return inputFailure("The source file is not valid JSON.", usesJSON: options.usesJSONOutput)
         }
 
+        if let replayDirectory {
+            var diagnostic = SearchDiagnostic()
+            var category: String?
+            do {
+                let source = try BookSourceImporter().importSource(from: sourceJSON).source
+                _ = try await BookSourceSearchRuntime(httpClient: DiagnosticReplayClient(directory: replayDirectory))
+                    .search(source: source, keyword: options.keyword, page: options.searchPage, diagnostic: &diagnostic)
+            } catch {
+                switch diagnostic.lastStage {
+                case .responseDecode: category = "charset"
+                case .request: category = "comparisonFailed"
+                case .requestBuild: category = "requestUnavailable"
+                default: category = "parse"
+                }
+            }
+            struct ReplayOutput: Encodable {
+                let searchDiagnostic: SearchDiagnostic
+                let errorCategory: String?
+            }
+            let output = try? JSONEncoder().encode(ReplayOutput(searchDiagnostic: diagnostic, errorCategory: category))
+            return CLIExecution(exitCode: category == nil ? .success : .compatibilityFailure,
+                output: output.map { String(decoding: $0, as: UTF8.self) } ?? "{}")
+        }
+        let transport: any HTTPClient = captureDirectory.map {
+            DiagnosticRequestCapture(transport: httpClient, directory: $0) as any HTTPClient
+        } ?? httpClient
         let report = await BookSourceCompatibilityRunner(
-            httpClient: httpClient,
+            httpClient: transport,
             textDecoder: FoundationTextDecoder(),
             maximumPageCount: options.maximumPageCount
         ).run(

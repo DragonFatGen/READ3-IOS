@@ -248,6 +248,9 @@ try {
     $privatePath = Join-Path $temporary 'source-diagnostic-private'
     [System.IO.Directory]::CreateDirectory($privatePath) | Out-Null
     [System.IO.File]::WriteAllText((Join-Path $privatePath 'source.json'), 'private-fixture')
+    foreach ($name in @('request.json', 'request.body', 'curl.config', 'curl.body', 'curl.stdout', 'curl.stderr', 'replay.stdout')) {
+        [System.IO.File]::WriteAllText((Join-Path $privatePath $name), 'private-curl-failure-fixture')
+    }
     $code = Invoke-DiagnosticProcess -Executable (Get-Command pwsh).Source -Arguments @(
         '-NoProfile', '-File', $entry, '-Cleanup'
     ) -Directory $temporary -Prefix 'cleanup' -TimeoutSeconds 30
@@ -260,3 +263,4 @@ try {
     if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Recurse -Force }
 }
 Write-Output 'Source diagnostic helper tests passed (offline).'
+& (Join-Path $PSScriptRoot 'CurlDiagnostic.Tests.ps1')

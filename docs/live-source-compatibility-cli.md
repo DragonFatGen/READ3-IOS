@@ -349,7 +349,114 @@ this live run. Offline tests use invented HTML, mock responses and injected
 errors, including direct detail results, zero-match forms, missing fields,
 rule failures, out-of-range selection, and rejection of sensitive report fields.
 
-## Known limitations
+## Optional curl search comparison
+
+After the commit is pushed by the owner and Windows/macOS **Core Tests** pass,
+open **Actions → Manual Source Diagnostic → Run workflow**, select `main`, enable
+`curl_compare` (default **false**), and use the existing 速读谷 candidate Secret
+unchanged. For the current investigation enter `keyword=苟在两界修仙`,
+`search_page=1`, `book_index=0`, `chapter_index=0`, `maximum_page_count=5`.
+Dispatch once and compare both platform summaries and the two
+`source-diagnostic-report-*` artifacts from that same run. No Secret change is
+required. Committing this feature does not push or dispatch it.
+
+The supplied evidence from run **34701530823**, commit **56ea84e**, is HTTP 200,
+HTML, 3058 response bytes, no redirect, no rule exception, zero list matches and
+zero final results, at `resultSelection`, with `pageHint=unknown` on both
+platforms. It establishes a completed zero-match parse, not the reason the
+server returned that page. The earlier independent curl POST was not yet shown
+to have the same request bytes, headers or URL.
+
+When enabled, the CLI captures only the first HTTP request constructed by the
+production RequestBuilder, before the original Swift transport runs. The URL,
+method and headers go to private `request.json`; the exact Data bytes go to
+`request.body`, without a BOM, newline or string re-encoding. Capture errors do
+not alter the Swift result. This is CLI-only instrumentation; production source
+rules and parsing semantics are unchanged. There is no source/site-specific
+URL construction in the curl runner.
+
+PowerShell runs `curl.exe` explicitly on Windows and `curl` on macOS, once per
+runner, with a private config path and `--data-binary @<private file>`. It disables
+curlrc loading, keeps TLS verification enabled, restricts protocols to HTTP(S),
+uses a 15-second connection timeout, a 60-second total timeout, no retries,
+at most 20 redirects (also bounded by the captured policy), and an 8 MiB response
+limit. A 75-second process watchdog is separate from curl's timeout. No URL,
+header or body value is expanded into log output or process arguments.
+
+Credential-bearing requests (`Cookie`, `Authorization`, `Proxy-Authorization`)
+are sent to the initial URL with their original headers but **do not follow any
+redirects**. This conservative comparison policy prevents cross-domain credential
+forwarding even though the existing cookie-session wrapper reconstructs explicit
+headers for subsequent hops. It does not change that wrapper. A received redirect
+is classified `credentialRedirectBlocked`; it is not a comparison of final pages.
+`credentialRedirectsBlocked=true` records the policy even if no redirect occurred.
+Credential-free requests follow the captured bounded policy using curl's normal
+POST-to-GET handling for 301/302/303. URL-embedded credentials are unsupported.
+The comparison does not create a cookie jar or reproduce Swift's cookie session;
+server cookies on intermediate redirects can therefore produce differences.
+
+The `curlComparison.requestAudit` object contains only:
+
+| Field | Interpretation |
+| --- | --- |
+| `method` | Actual allowlisted method, otherwise `other` |
+| `contentType` | `form`, `json`, `multipart`, `text`, `missing`, `other` |
+| `bodyByteCount` | Exact captured Data size |
+| `formEncoded` | For POST URL-encoded forms only: ASCII key/value pairs and valid percent escapes; otherwise null |
+| `searchkeyMatchesKeyword` | Exactly one decoded `searchkey` equals the input; null when form validation/decoding is unavailable |
+| `unresolvedPlaceholder` | Template/script markers found in the URL, headers or body, including percent-decoded text |
+
+Form auditing never rewrites the request. Percent decoding uses UTF-8; undecodable
+values remain unknown. Duplicate or missing searchkey fields do not match.
+Placeholders are a static heuristic, not an execution of source scripts.
+
+On a completed curl transfer, the CLI reimports the same private source and uses
+the existing `BookSourceSearchRuntime` with a file-only HTTP client. RequestBuilder
+and its variable writes are reused; the response body, MIME type and final URL
+come from curl. There is no network-capable client on this replay path and no
+book-info, TOC or content stage. The original Swift chain retains its existing
+behavior. Curl's compressed response decoding is enabled; explicit request
+headers are retained, and unspecified curl Accept/Accept-Encoding/Content-Type/
+Expect defaults are suppressed. Implicit transport headers, TLS/HTTP versions,
+cookie sessions, timing and server state can still differ.
+
+Compare original `searchDiagnostic` against `curlComparison`'s response status,
+byte count, redirect flag, page hint, list match count and final result count.
+The nested curl `searchDiagnostic` also retains existing rule failure metadata.
+The original fixed `failureCategory`/`requestFailureKind` and curl's fixed
+`errorCategory` describe separate outcomes. Curl errors include `dns`,
+`connection`, `timeout`, `tls`, `redirectLimit`, `responseLimit`, `curlFailed`,
+`requestUnavailable`, `comparisonFailed`, `credentialRedirectBlocked`, `charset`
+and `parse`. `curlExitCode` is the native exit code, or 124 for the process
+watchdog; it is null if curl was not launched. Missing/unconfirmed observations
+stay null. A failed transfer may retain its received HTTP status and observed
+redirect flag, but incomplete body counts and parse results stay null.
+
+If both completed parses still match zero nodes, curl has not demonstrated a
+Swift transport-specific failure. If curl returns matches while Swift returns
+zero, first compare the audit, response metadata, redirect policy and page hints;
+this narrows the investigation but does not by itself prove a Swift bug. If the
+form audit fails or the keyword differs, investigate request construction before
+changing book-list rules. Equal sizes and page hints do not prove identical HTML.
+Curl success never replaces the original Swift report status or job exit code.
+
+When disabled, `curlComparison` is null and there is no extra request. Raw request,
+response, config, metadata and stderr files live only in the existing private
+runner directory. The entry script's `finally` removes them after success or
+failure; the workflow's `always()` cleanup is the fallback. Neither private files
+nor raw exception messages are published. Hard termination can prevent cleanup,
+so this workflow continues to use ephemeral GitHub-hosted runners only.
+
+Offline XCTest coverage checks capture of RequestBuilder bytes before transport
+failure, first-request-only capture, and search-only replay with no network calls.
+`Scripts/Tests/CurlDiagnostic.Tests.ps1` is included by the existing helper suite
+on both platforms; it checks Chinese form auditing, config/body preservation,
+credential redirect blocking, fixed failure output and a single mocked curl
+invocation. The existing entry-script cleanup test includes all private curl
+files. Development performs static checks only; Swift compilation and all test
+execution are deferred to GitHub Actions.
+
+## General limitations
 
 The command cannot make an unstable third-party site deterministic. WebView
 login, persistent authenticated sessions, and production rule-side

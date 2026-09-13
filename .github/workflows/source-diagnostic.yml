@@ -3,6 +3,10 @@ name: Manual Source Diagnostic
 on:
   workflow_dispatch:
     inputs:
+      curl_compare:
+        description: Compare the actual Swift search request with curl (one extra search per platform)
+        type: boolean
+        default: false
       keyword:
         description: Search keyword (public input; do not enter sensitive data)
         required: true
@@ -73,6 +77,7 @@ jobs:
           DIAGNOSTIC_BOOK_INDEX: ${{ inputs.book_index }}
           DIAGNOSTIC_CHAPTER_INDEX: ${{ inputs.chapter_index }}
           DIAGNOSTIC_MAXIMUM_PAGE_COUNT: ${{ inputs.maximum_page_count }}
+          DIAGNOSTIC_CURL_COMPARE: ${{ inputs.curl_compare }}
         run: ./Scripts/Invoke-SourceDiagnostic.ps1
 
       - name: Publish safe summary

@@ -72,6 +72,7 @@ function New-DiagnosticStatus {
         completedStage = $null
         searchResultCount = $null
         searchDiagnostic = $null
+        curlComparison = $null
         chapterCount = $null
         contentCharacterCount = $null
         failureCategory = $null
@@ -282,4 +283,4 @@ function Invoke-DiagnosticProcess {
 Export-ModuleMember -Function Get-DiagnosticOptions, New-DiagnosticStatus,
     ConvertTo-PublicDiagnostic, Get-DiagnosticExitCode, ConvertTo-DiagnosticSummary,
     Invoke-DiagnosticProcess, Get-DiagnosticExecutableName, ConvertTo-DiagnosticSwiftVersion,
-    New-DiagnosticEnvironment
+    New-DiagnosticEnvironment, ConvertTo-PublicSearchDiagnostic
