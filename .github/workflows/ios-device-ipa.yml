@@ -1,0 +1,170 @@
+name: iOS Device IPA
+
+# Packages a real device (iphoneos / arm64) Release build into an unsigned IPA.
+# The IPA is NOT signed: the user re-signs it locally on Windows with Sideloadly
+# and their own Apple ID. See docs/windows-sideloadly-install.md.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-unsigned-ipa:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+
+      - name: Show tool versions
+        id: versions
+        run: |
+          xcodebuild -version | tee xcodebuild.log
+          swift --version | tee -a xcodebuild.log
+          echo "xcode_version=$(xcodebuild -version | head -n 1)" >> "$GITHUB_OUTPUT"
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Check for entitlements and signing capabilities
+        shell: bash
+        run: |
+          set -e
+          ENTITLEMENT_FILES=$(find . -name '*.entitlements' -not -path './Reference/*' -not -path './DerivedData/*' | wc -l | tr -d ' ')
+          PBX_CAPS=$(grep -c 'SystemCapabilities' LegadoIOS.xcodeproj/project.pbxproj || true)
+          PBX_ENT=$(grep -c 'CODE_SIGN_ENTITLEMENTS' LegadoIOS.xcodeproj/project.pbxproj || true)
+          echo "entitlements_files=$ENTITLEMENT_FILES"
+          echo "pbx_system_capabilities=$PBX_CAPS"
+          echo "pbx_code_sign_entitlements=$PBX_ENT"
+          if [ "$PBX_CAPS" != "0" ] || [ "$PBX_ENT" != "0" ] || [ "$ENTITLEMENT_FILES" != "0" ]; then
+            echo "::warning::Detected Xcode capabilities or CODE_SIGN_ENTITLEMENTS that free personal signing may not support. Review before distributing."
+          else
+            echo "No entitlements file and no Xcode capabilities detected; nothing blocks free personal re-signing."
+          fi
+          echo "NOTE: project.yml declares INFOPLIST_KEY_UIBackgroundModes=audio (Info.plist key, not an entitlement). It does not block installation with free signing."
+          tee -a xcodebuild.log <<< "entitlement check: files=$ENTITLEMENT_FILES caps=$PBX_CAPS ent=$PBX_ENT"
+
+      - name: Build iOS device app (Release, unsigned)
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -project LegadoIOS.xcodeproj \
+            -scheme LegadoIOS \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath DerivedData \
+            CODE_SIGNING_ALLOWED=NO \
+            build | tee -a xcodebuild.log
+
+      - name: Locate and verify device build products
+        shell: bash
+        id: verify
+        run: |
+          set -euo pipefail
+          APP_PATH="DerivedData/Build/Products/Release-iphoneos/LegadoIOS.app"
+          [ -d "$APP_PATH" ] || { echo "App bundle not found: $APP_PATH" >&2; exit 1; }
+          BINARY="$APP_PATH/LegadoIOS"
+          [ -f "$BINARY" ] || { echo "Mach-O binary missing" >&2; exit 1; }
+          echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
+
+          echo "== Architectures =="
+          ARCHS="$(lipo -info "$BINARY")"
+          echo "$ARCHS"
+          echo "$ARCHS" | grep -q 'arm64' || { echo "FAIL: arm64 slice missing" >&2; exit 1; }
+          if echo "$ARCHS" | grep -q 'x86_64'; then
+            echo "FAIL: simulator architecture (x86_64) present in a device build" >&2
+            exit 1
+          fi
+
+          echo "== Mach-O platform =="
+          BUILD_INFO="$(otool -l "$BINARY" | grep -A3 'cmd LC_BUILD_VERSION' || true)"
+          echo "$BUILD_INFO"
+          if [ -n "$BUILD_INFO" ]; then
+            echo "$BUILD_INFO" | grep -q 'platform IOSSIMULATOR' && { echo "FAIL: binary targets the iOS Simulator" >&2; exit 1; }
+            echo "$BUILD_INFO" | grep -q 'platform IOS' || { echo "FAIL: unexpected Mach-O platform" >&2; exit 1; }
+          else
+            otool -l "$BINARY" | grep -q 'LC_VERSION_MIN_IPHONEOS' || { echo "FAIL: no iOS min-version load command" >&2; exit 1; }
+          fi
+
+          echo "== Info.plist =="
+          PLIST="$APP_PATH/Info.plist"
+          [ -f "$PLIST" ] || { echo "FAIL: Info.plist missing" >&2; exit 1; }
+          BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")"
+          MIN_OS="$(/usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$PLIST" 2>/dev/null || echo '')"
+          echo "bundle_id=$BUNDLE_ID"
+          echo "min_os=$MIN_OS"
+          echo "bundle_id=$BUNDLE_ID" >> "$GITHUB_OUTPUT"
+          echo "min_os=$MIN_OS" >> "$GITHUB_OUTPUT"
+          [ "$BUNDLE_ID" = "com.read3.legadoios" ] || { echo "FAIL: unexpected bundle identifier: $BUNDLE_ID" >&2; exit 1; }
+          [ -n "$MIN_OS" ] || { echo "FAIL: MinimumOSVersion missing" >&2; exit 1; }
+
+          echo "== Frameworks and Swift runtime =="
+          if [ -d "$APP_PATH/Frameworks" ]; then
+            ls -la "$APP_PATH/Frameworks"
+            DYLIBS="$(find "$APP_PATH/Frameworks" -name '*.dylib' | wc -l | tr -d ' ')"
+            [ "$DYLIBS" -gt 0 ] || { echo "FAIL: Swift runtime dylibs missing from Frameworks" >&2; exit 1; }
+          else
+            echo "FAIL: Frameworks directory missing (Swift runtime not embedded)" >&2
+            exit 1
+          fi
+
+          echo "== Bundle contents =="
+          ls -la "$APP_PATH"
+
+          echo "== Linked libraries (head) =="
+          otool -L "$BINARY" | head -40
+
+      - name: Package unsigned IPA
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf Payload READ3-IOS-unsigned.ipa
+          mkdir -p Payload
+          # cp -a preserves symlinks and permissions; zip -y keeps symlinks as symlinks
+          cp -a "DerivedData/Build/Products/Release-iphoneos/LegadoIOS.app" Payload/
+          zip -y -r READ3-IOS-unsigned.ipa Payload
+          unzip -l READ3-IOS-unsigned.ipa | head -60
+
+      - name: Upload unsigned IPA artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: READ3-IOS-unsigned
+          path: READ3-IOS-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload build logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-device-build-log
+          path: |
+            xcodebuild.log
+            DerivedData/Logs/Build
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Write step summary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## iOS Device IPA (unsigned)"
+            echo ""
+            echo "- Commit: ${GITHUB_SHA}"
+            echo "- Xcode: ${{ steps.versions.outputs.xcode_version }}"
+            echo "- Bundle Identifier: ${{ steps.verify.outputs.bundle_id }}"
+            echo "- Minimum iOS version: ${{ steps.verify.outputs.min_os }}"
+            echo "- Artifact: READ3-IOS-unsigned (READ3-IOS-unsigned.ipa, kept 7 days)"
+            echo ""
+            echo "> **此 IPA 未经签名，下载后必须在本地用 Sideloadly 和自己的 Apple 账号签名后才能安装到 iPhone。**"
+            echo "> 安装步骤见 \`docs/windows-sideloadly-install.md\`。"
+          } >> "$GITHUB_STEP_SUMMARY"
